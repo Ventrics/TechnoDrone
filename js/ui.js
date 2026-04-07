@@ -445,21 +445,26 @@ const leaderboard = {
 
     clearGlow();
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
     const pulse2 = 0.6 + 0.4 * Math.sin(now * 0.002);
+    const footerHintSize = Math.round(Math.max(12, 13 * layoutScale));
+    const footerStatusSize = Math.round(Math.max(11, 12 * layoutScale));
+    const footerHintY = H - 28;
+    const footerStatusY = footerHintY - Math.max(24, footerHintSize + 10);
+
+    ctx.textBaseline = 'bottom';
     ctx.globalAlpha = pulse2;
     setGlow('#2e3bf0', 10);
     ctx.fillStyle = '#d9d4ff';
-    ctx.font = `bold ${Math.round(Math.max(12, 13 * layoutScale))}px monospace`;
-    ctx.fillText('[ ESC OR BACKSPACE TO RETURN ]', cx, H - 30);
+    ctx.font = `bold ${footerHintSize}px monospace`;
+    ctx.fillText('[ ESC OR BACKSPACE TO RETURN ]', cx, footerHintY);
 
     if (this.submitMessage) {
-      ctx.textBaseline = 'top';
-      ctx.globalAlpha = 0.9;
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.92;
       setGlow(this.submitOk ? '#2e3bf0' : '#ff5544', 12);
       ctx.fillStyle = this.submitOk ? '#d9d4ff' : '#ff8a80';
-      ctx.font = `bold ${Math.round(Math.max(11, 12 * layoutScale))}px monospace`;
-      ctx.fillText(this.submitMessage, cx, H - 54);
+      ctx.font = `bold ${footerStatusSize}px monospace`;
+      ctx.fillText(this.submitMessage, cx, footerStatusY);
     }
 
     clearGlow();
@@ -1177,16 +1182,13 @@ function drawPauseMenu() {
     const sel     = i === pauseSel;
     let label     = item;
     
-    if (item === 'MASTER VOL') {
-      const vol = parseInt(localStorage.getItem('drone_master_vol') || '100', 10);
+    if (item === 'MUSIC VOL') {
+      const vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
       const bars = Math.round(vol / 10);
-      label = `MASTER VOL [${'|'.repeat(bars)}${' '.repeat(10 - bars)}]`;
+      label = `MUSIC VOL  [${'|'.repeat(bars)}${' '.repeat(10 - bars)}]`;
     } else if (item === 'SFX') {
       const sfxOn = localStorage.getItem('drone_sfx_on') !== '0';
       label = `SFX        [${sfxOn ? 'ON ' : 'OFF'}]`;
-    } else if (item === 'MUSIC') {
-      const musicOn = localStorage.getItem('drone_music_on') !== '0';
-      label = `MUSIC      [${musicOn ? 'ON ' : 'OFF'}]`;
     }
 
     if (sel) {
@@ -1270,12 +1272,18 @@ function drawHUD() {
   const hudPink   = '#dd32b3';
   const hudHot    = '#fb29fd';
   const hudColor   = hudBlue;
-  const hudMuted   = hudPink;
-  const scoreColor = hudHot;
-  const scoreGlow  = hudHot;
-  const livesColor = hudBlue;
-  const nukeColor  = hudPurple;
+  const hudMuted   = '#8f78d8';
+  const infoColor  = '#f3f0ff';
+  const infoGlow   = '#c9b8ff';
+  const scoreColor = infoColor;
+  const scoreGlow  = infoGlow;
+  const killsColor = '#d9d4ff';
+  const killsGlow  = '#b8a8ff';
+  const livesColor = '#49f2c2';
+  const livesLabelColor = '#8cf5d7';
+  const nukeColor  = hudPink;
   const nukeReadyColor = hudHot;
+  const nukeLabelColor = '#f08fe0';
   const spreadColor = '#ffd400';
   const spreadHighlight = '#fff0a8';
   const bassColor = '#a3122a';
@@ -1346,11 +1354,11 @@ function drawHUD() {
     return y + h + 10;
   };
 
-  const drawSegmentRow = (x, y, width, count, filledCount, color, label, activeReady = false) => {
+  const drawSegmentRow = (x, y, width, count, filledCount, color, label, activeReady = false, labelColor = hudMuted) => {
     const gap = 10;
     const segW = (width - gap * (count - 1)) / count;
     ctx.save();
-    y = drawHudLabel(label, x, y, hudMuted, color, 13, 0.84);
+    y = drawHudLabel(label, x, y, labelColor, color, 13, 0.84);
     for (let i = 0; i < count; i++) {
       const sx = x + i * (segW + gap);
       const filled = i < filledCount;
@@ -1368,7 +1376,7 @@ function drawHUD() {
 
   let cy = py + pad;
 
-  cy = drawHudLabel('STAGE', tx, cy, hudMuted, hudColor, 13, 0.82);
+  cy = drawHudLabel('STAGE', tx, cy, '#7aa8ff', hudColor, 13, 0.82);
   ctx.font = `bold ${Math.min(34, Math.max(26, Math.floor(barW * 0.14)))}px monospace`;
   ctx.fillStyle = hudColor;
   setGlow(hudColor, 14);
@@ -1376,7 +1384,7 @@ function drawHUD() {
   clearGlow();
   cy += 52;
 
-  cy = drawHudLabel('SCORE', tx, cy, hudMuted, scoreGlow, 13, 0.84);
+  cy = drawHudLabel('SCORE', tx, cy, '#cfc3ff', scoreGlow, 13, 0.84);
   ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
   ctx.fillStyle = scoreColor;
   setGlow(scoreGlow, 20);
@@ -1384,17 +1392,17 @@ function drawHUD() {
   clearGlow();
   cy += 48;
 
-  cy = drawHudLabel('KILLS', tx, cy, hudMuted, scoreGlow, 13, 0.84);
+  cy = drawHudLabel('KILLS', tx, cy, '#bdaeff', killsGlow, 13, 0.84);
   ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
-  ctx.fillStyle = scoreColor;
-  setGlow(scoreGlow, 20);
+  ctx.fillStyle = killsColor;
+  setGlow(killsGlow, 18);
   ctx.fillText(String(stage.kills), tx, cy);
   clearGlow();
   cy += 48;
 
-  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES');
+  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor);
   cy += 6;
-  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'NUKE', player.ultReady);
+  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'NUKE', player.ultReady, nukeLabelColor);
   cy += 6;
 
   cy = drawHudLabel('HEAT', tx, cy, heatFrac > 0.45 ? heatColor : hudMuted, heatColor, 13, 0.84);
@@ -2135,6 +2143,15 @@ const tutorial = {
     localStorage.setItem('drone_tutorial_done', '1');
     _resetAllState();
     gameState = 'playing';
+  },
+
+  cancel() {
+    this.active = false;
+    _resetAllState();
+    gameState = 'title';
+    titleSelection = 0;
+    titleSelectionChangedAt = getNow();
+    audio.playMusic('title');
   }
 };
 
@@ -2423,9 +2440,11 @@ function handleDevMenuClick(e) {
 (function initAudioState() {
   const masterVol = localStorage.getItem('drone_master_vol');
   const sfxOn = localStorage.getItem('drone_sfx_on');
+  const musicVol = localStorage.getItem('drone_music_vol');
   const musicOn = localStorage.getItem('drone_music_on');
 
   if (masterVol !== null) audio.setMasterVolume(parseInt(masterVol, 10) / 100);
   if (sfxOn === '0') audio.setSfxVolume(0);
-  if (musicOn === '0') audio.setMusicVolume(0);
+  if (musicVol !== null) audio.setMusicVolume(parseInt(musicVol, 10) / 100);
+  else if (musicOn === '0') audio.setMusicVolume(0);
 })();

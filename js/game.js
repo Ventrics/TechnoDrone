@@ -16,21 +16,23 @@ window.addEventListener('keydown', e => {
   }
   
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-    if (PAUSE_ITEMS[pauseSel] === 'MASTER VOL') {
-      let vol = parseInt(localStorage.getItem('drone_master_vol') || '100', 10);
-      vol = Math.max(0, vol - 10);
-      localStorage.setItem('drone_master_vol', vol.toString());
-      audio.setMasterVolume(vol / 100);
+    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') {
+      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+      vol = Math.max(0, vol - 5);
+      localStorage.setItem('drone_music_vol', vol.toString());
+      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
+      audio.setMusicVolume(vol / 100);
       audio.play('menuSelect');
     }
   }
   
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-    if (PAUSE_ITEMS[pauseSel] === 'MASTER VOL') {
-      let vol = parseInt(localStorage.getItem('drone_master_vol') || '100', 10);
-      vol = Math.min(100, vol + 10);
-      localStorage.setItem('drone_master_vol', vol.toString());
-      audio.setMasterVolume(vol / 100);
+    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') {
+      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+      vol = Math.min(100, vol + 5);
+      localStorage.setItem('drone_music_vol', vol.toString());
+      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
+      audio.setMusicVolume(vol / 100);
       audio.play('menuSelect');
     }
   }
@@ -47,11 +49,12 @@ window.addEventListener('keydown', e => {
       localStorage.setItem('drone_sfx_on', on ? '1' : '0');
       audio.setSfxVolume(on ? 1.0 : 0);
     }
-    if (selItem === 'MUSIC') { 
-      let on = localStorage.getItem('drone_music_on') !== '0';
-      on = !on;
-      localStorage.setItem('drone_music_on', on ? '1' : '0');
-      audio.setMusicVolume(on ? 1.0 : 0);
+    if (selItem === 'MUSIC VOL') { 
+      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+      vol = vol > 0 ? 0 : 10;
+      localStorage.setItem('drone_music_vol', vol.toString());
+      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
+      audio.setMusicVolume(vol / 100);
     }
     if (selItem === 'HOME') { 
       paused = false; 
@@ -60,6 +63,14 @@ window.addEventListener('keydown', e => {
       audio.playMusic('title'); 
       delete justPressed['Enter']; 
     }
+  }
+});
+
+window.addEventListener('keydown', e => {
+  if (gameState !== 'tutorial') return;
+  if (e.key === 'Escape') {
+    audio.play('menuSelect');
+    tutorial.cancel();
   }
 });
 

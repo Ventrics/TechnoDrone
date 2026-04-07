@@ -6,8 +6,13 @@ window.audio = (function() {
   let ctx = null;
   let masterGain, sfxGain, musicGain;
   let isMuted = false;
-  let _masterVol = 1.0, _sfxVol = 1.0, _musicVol = 1.0;
+  let _masterVol = 1.0, _sfxVol = 1.0, _musicVol = 0.20;
   let _pendingMusic = null;
+
+  // Commissioned soundtrack
+  let _bgmEl = null;
+  // Base volume for _bgmEl when slider is at 100%. Keep conservative — user can turn up.
+  const BGM_BASE_VOL = 0.30;
 
   // Loaded audio pools (WAV files via HTMLAudioElement — works on file://)
   const audioPools = {};
@@ -22,6 +27,24 @@ window.audio = (function() {
 
   let currentMusicName = null;
   let musicVoices = []; // active oscillators/lfo pairs
+
+  // Load stored audio settings immediately so init() and setters pick them up.
+  try {
+    const storedMasterVol = localStorage.getItem('drone_master_vol');
+    const storedSfxOn     = localStorage.getItem('drone_sfx_on');
+    const storedMusicVol  = localStorage.getItem('drone_music_vol');
+    const storedMusicOn   = localStorage.getItem('drone_music_on');
+    if (storedMasterVol !== null) _masterVol = Math.max(0, Math.min(1, parseInt(storedMasterVol, 10) / 100));
+    if (storedSfxOn === '0') _sfxVol = 0;
+    if (storedMusicVol !== null) _musicVol = Math.max(0, Math.min(1, parseInt(storedMusicVol, 10) / 100));
+    else if (storedMusicOn === '0') _musicVol = 0;
+  } catch (error) {}
+
+  // Apply current volume state directly to the BGM element.
+  // Used because createMediaElementAudioSource is blocked on file:// protocol.
+  function _applyBgmVol() {
+    if (_bgmEl) _bgmEl.volume = isMuted ? 0 : Math.min(1, BGM_BASE_VOL * _musicVol * _masterVol);
+  }
   
   // --- Core Graph Creation ---
   function init() {
@@ -39,21 +62,32 @@ window.audio = (function() {
     masterGain = ctx.createGain();
     sfxGain = ctx.createGain();
     musicGain = ctx.createGain();
-    
+
     masterGain.gain.value = _masterVol;
-    sfxGain.gain.value = _sfxVol;
-    musicGain.gain.value = _musicVol;
-    
+    sfxGain.gain.value = _sfxVol * 0.9;
+    musicGain.gain.value = 1.0;
+
     sfxGain.connect(masterGain);
     musicGain.connect(masterGain);
     masterGain.connect(ctx.destination);
-    
+
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
 
     // Load WAV files using Audio element pools (works on file://)
     _loadPool('shoot', 'sounds/shoot.wav', 4);
+    _loadPool('sniperCharge', 'sounds/shoot.wav', 3);
+
+    // Commissioned soundtrack — routed through Web Audio graph for unified processing
+    _bgmEl = new Audio('Techno Drone V1 Master Chain .mp3');
+    _bgmEl.loop = true;
+    _bgmEl.preload = 'auto';
+    _bgmEl.load();
+
+    // Note: createMediaElementAudioSource is blocked on file:// (Chrome cross-origin).
+    // BGM volume is controlled directly via _bgmEl.volume through _applyBgmVol().
+    _applyBgmVol();
   }
 
   function _loadPool(name, path, size) {
@@ -73,7 +107,7 @@ window.audio = (function() {
     const el = pool.elements[pool.idx % pool.elements.length];
     pool.idx++;
     const effectiveVolume = isMuted ? 0 : Math.min(1, Math.max(0, (volume || 1.0) * _masterVol * _sfxVol));
-    const playbackRate = Math.max(0.25, Math.min(4, opts.playbackRate || 1));
+    const playbackRate = Math.max(0.08, Math.min(4, opts.playbackRate || 1));
     el.pause();
     el.currentTime = 0;
     el.muted = isMuted || effectiveVolume <= 0;
@@ -183,6 +217,7 @@ window.audio = (function() {
     };
   }
 
+
   // Procedural Recipes Definitions
   const recipes = {
     // Player Sound Effects
@@ -216,11 +251,13 @@ window.audio = (function() {
       createNoise((g,t)=>{ g.setValueAtTime(0.2, t); g.exponentialRampToValueAtTime(0.01, t+0.15); }, 0.15),
       createOsc('sine', 300, (g,t)=>{ g.setValueAtTime(0.2, t); g.exponentialRampToValueAtTime(0.01, t+0.1); }, 0.1)
     ],
-    eliteDeath: () => [
+    eliteDeath: () => {
+      return [
       createNoise((g,t)=>{ g.setValueAtTime(0.25, t); g.exponentialRampToValueAtTime(0.01, t+0.25); }, 0.25),
       createOsc('sine', 300, (g,t)=>{ g.setValueAtTime(0.2, t); g.exponentialRampToValueAtTime(0.01, t+0.15); }, 0.15),
       createOsc('sine', 60, (g,t)=>{ g.setValueAtTime(0.15, t); g.exponentialRampToValueAtTime(0.01, t+0.3); }, 0.3)
-    ],
+      ];
+    },
     shieldHit: () => [
       createOsc('sine', 2400, (g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.06); }, 0.06),
       createOsc('sine', 3600, (g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.04); }, 0.04)
@@ -236,10 +273,12 @@ window.audio = (function() {
         for(let i=0; i<3; i++){ g.setValueAtTime(0.1, t + i*0.133); g.setValueAtTime(0, t + i*0.133 + 0.1); }
       }, 0.4)
     ],
-    playerDeath: () => [
-      createOsc('sawtooth', 440, (g,t)=>{ g.setValueAtTime(0.2, t); g.linearRampToValueAtTime(0.01, t+1.5); }, 1.5, 80, 1.5),
-      createNoise((g,t)=>{ g.setValueAtTime(0.05, t); g.linearRampToValueAtTime(0.01, t+0.8); }, 1.5)
-    ],
+    playerDeath: () => {
+      return [
+        createOsc('sawtooth', 440, (g,t)=>{ g.setValueAtTime(0.2, t); g.linearRampToValueAtTime(0.01, t+1.5); }, 1.5, 80, 1.5),
+        createNoise((g,t)=>{ g.setValueAtTime(0.05, t); g.linearRampToValueAtTime(0.01, t+0.8); }, 1.5)
+      ];
+    },
     // Pickups & State Changes
     pickupCollect: () => createOsc('sine', 800, (g,t)=>{
       g.setValueAtTime(0.12, t); g.linearRampToValueAtTime(0, t+0.15);
@@ -300,9 +339,7 @@ window.audio = (function() {
     },
     
     // Enemy Sounds
-    sniperWarning: () => createOsc('sine', 400, (g,t)=>{
-      g.setValueAtTime(0.03, t); g.linearRampToValueAtTime(0.1, t+0.45);
-    }, 0.45, 1600, 0.45),
+    sniperWarning: () => _playPool('sniperCharge', 0.65, { playbackRate: 0.12 }),
     sniperFire: () => [
       createNoise((g,t)=>{ g.setValueAtTime(0.18, t); g.exponentialRampToValueAtTime(0.01, t+0.08); }, 0.08),
       createOsc('sine', 500, (g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.05); }, 0.05)
@@ -463,7 +500,10 @@ window.audio = (function() {
 
   function stopMusic(fadeMs = 500) {
     if (!ctx) return;
-    const t = ctx.currentTime;
+    if (_bgmEl && !_bgmEl.paused) {
+      _bgmEl.pause();
+      _bgmEl.currentTime = 0;
+    }
     const fSec = fadeMs / 1000;
     musicVoices.forEach(v => {
       if(!v || !v.gainNode) return;
@@ -480,54 +520,21 @@ window.audio = (function() {
   }
 
   function playMusic(name) {
-    // Music disabled — re-enable when commissioned tracks are ready.
-    return;
-    if (!ctx || name === currentMusicName) return;
-    if (isMuted) { _pendingMusic = name; currentMusicName = name; return; }
+    if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
-    
-    stopMusic(800);
-    
-    setTimeout(() => {
-      if (!ctx || isMuted) return;
-      currentMusicName = name;
-      const t = ctx.currentTime;
-      
-      if (name === 'title') {
-        const pad = createMusicVoice('sine', 130, 0, 0.5, 0.01);
-        pad.gainNode.gain.linearRampToValueAtTime(0.04, t + 0.8);
-        const shimmer = createMusicVoice('triangle', 523, 0, 0.3, 3);
-        shimmer.gainNode.gain.linearRampToValueAtTime(0.015, t + 0.8);
-        musicVoices = [pad, shimmer];
-      }
-      else if (name === 'gameplay') {
-        let stage = typeof window.stage !== 'undefined' ? window.stage.current : 1;
-        
-        const sub = createMusicVoice('sine', 65*(1+stage*0.05), 0, 1.5+stage*0.3, 0.05);
-        sub.gainNode.gain.linearRampToValueAtTime(0.05, t + 0.8);
-        const mid = createMusicVoice('triangle', 130*(1+stage*0.08), 0, 0.2, 5); 
-        mid.gainNode.gain.linearRampToValueAtTime(0.025, t + 0.8);
-        const tick = createMusicVoice('square', 520, 0, 2+stage*0.4, 0.008);
-        tick.gainNode.gain.linearRampToValueAtTime(0.008, t + 0.8);
-        if(tick.lfo) tick.lfo.type = 'square';
-        
-        musicVoices = [sub, mid, tick];
-      }
-      else if (name === 'death') {
-        const v = createMusicVoice('sine', 174, 0);
-        v.gainNode.gain.setValueAtTime(0, t);
-        v.gainNode.gain.linearRampToValueAtTime(0.03, t+0.1);
-        v.gainNode.gain.exponentialRampToValueAtTime(0.01, t+3);
-        musicVoices = [v];
-      }
-      else if (name === 'win') {
-        musicVoices = [261, 329, 392].map(f => {
-          const v = createMusicVoice('sine', f, 0, 2, 0.005);
-          v.gainNode.gain.linearRampToValueAtTime(0.025, t + 0.5);
-          return v;
-        });
-      }
-    }, 850);
+    currentMusicName = name;
+    if (isMuted) { _pendingMusic = name; return; }
+    if (name !== 'gameplay') {
+      stopMusic(0);
+      return;
+    }
+    // Start the soundtrack if not already playing — it loops through all game states
+    if (_bgmEl && _bgmEl.paused) {
+      _applyBgmVol();
+      _bgmEl.play().catch(() => {});
+    } else {
+      _applyBgmVol();
+    }
   }
 
   let _lastMusicStage = -1;
@@ -550,26 +557,24 @@ window.audio = (function() {
       if(tick.lfo) tick.lfo.frequency.setTargetAtTime(2+stageNum*0.4, t, 0.2);
     }
 
-    // Duck music only on actual stage change
-    if (stageChanged && stageNum > 1) {
-      const dt = ctx.currentTime;
-      const curVol = musicGain.gain.value;
-      musicGain.gain.cancelScheduledValues(dt);
-      musicGain.gain.setValueAtTime(curVol, dt);
-      musicGain.gain.linearRampToValueAtTime(curVol * 0.5, dt + 0.05);
-      musicGain.gain.setValueAtTime(curVol * 0.5, dt + 0.35);
-      musicGain.gain.linearRampToValueAtTime(_musicVol, dt + 0.65);
-    }
   }
 
   return {
     init, play, startLoop, stopLoop, playMusic, stopMusic, updateMusicIntensity,
-    setMasterVolume: (vol) => { _masterVol = Math.max(0, Math.min(1, vol)); if (masterGain && !isMuted) masterGain.gain.value = _masterVol; },
-    setSfxVolume:  (vol) => { _sfxVol = Math.max(0, Math.min(1, vol)); if (sfxGain) sfxGain.gain.value = _sfxVol; },
-    setMusicVolume:(vol) => { _musicVol = Math.max(0, Math.min(1, vol)); if (musicGain) musicGain.gain.value = _musicVol; },
+    setMasterVolume: (vol) => {
+      _masterVol = Math.max(0, Math.min(1, vol));
+      if (masterGain) masterGain.gain.value = isMuted ? 0 : _masterVol;
+      _applyBgmVol();
+    },
+    setSfxVolume:  (vol) => { _sfxVol = Math.max(0, Math.min(1, vol)); if (sfxGain) sfxGain.gain.value = _sfxVol * 0.9; },
+    setMusicVolume:(vol) => {
+      _musicVol = Math.max(0, Math.min(1, vol));
+      _applyBgmVol();
+    },
     toggleMute: () => {
       isMuted = !isMuted;
       if (masterGain) masterGain.gain.value = isMuted ? 0 : _masterVol;
+      _applyBgmVol();
       if (!isMuted && _pendingMusic) {
         const pending = _pendingMusic;
         _pendingMusic = null;

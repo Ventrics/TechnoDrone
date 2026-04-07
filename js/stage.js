@@ -42,7 +42,7 @@ const stage = {
     const scoreValue = getEnemyScoreValue(enemy);
     this.kills++;
     this.totalKills++;
-    player.score += scoreValue;
+    if (!fromNuke) player.score += scoreValue;
     player.onKill(isElite, fromNuke);
 
     if (isElite) {
@@ -50,19 +50,11 @@ const stage = {
       altFireDropIndex++;
       if (player.altFireType) {
         player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 24);
-        pickups.popups.push({
-          x: drone.x,
-          y: drone.y - 40,
-          label: 'OVERDRIVE +',
-          color: '#ff6600',
-          life: 900
-        });
+        streakCallout.show('OVERDRIVE +', '#d56cff', 1200, 2.5);
       } else {
-        pickups.spawnAltFireOrb(
-          drone.x + 60 + Math.random() * 80,
-          drone.y + (Math.random() - 0.5) * 60,
-          type
-        );
+        player.activateAltFire(type);
+        audio.play('pickupCollect');
+        streakCallout.showAltFire(type);
       }
     }
 

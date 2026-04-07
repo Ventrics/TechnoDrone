@@ -1,26 +1,35 @@
 const streakCallout = {
   text:  '',
   timer: 0,
+  duration: 1500,
   scale: 1,
+  startScale: 2.0,
   color: '#ffffff',
 
   showOverdrive() {
     this.show('OVERDRIVE', '#d56cff');
   },
 
-  show(text, color) {
+  showAltFire(type) {
+    if (type === 'spread') this.show('SPREAD SHOT', '#ffd400', 2100, 3.0);
+    else if (type === 'bass') this.show('BASS PULSE', '#a3122a', 2100, 3.0);
+  },
+
+  show(text, color, duration = 1500, startScale = 2.0) {
     this.text  = text;
     this.color = color;
-    this.timer = 1500;
-    this.scale = 2.0;
+    this.timer = duration;
+    this.duration = duration;
+    this.startScale = startScale;
+    this.scale = startScale;
   },
 
   update(delta) {
     if (this.timer <= 0) return;
     this.timer -= delta;
-    const elapsed = 1500 - this.timer;
+    const elapsed = this.duration - this.timer;
     if (elapsed < 300) {
-      this.scale = 2.0 - (elapsed / 300);
+      this.scale = this.startScale - ((this.startScale - 1.0) * (elapsed / 300));
     } else {
       this.scale = 1.0;
     }
@@ -42,7 +51,7 @@ const streakCallout = {
     ctx.restore();
   },
 
-  reset() { this.timer = 0; this.text = ''; }
+  reset() { this.timer = 0; this.text = ''; this.duration = 1500; this.scale = 1; this.startScale = 2.0; }
 };
 
 function isPlayerMoving() {
@@ -284,26 +293,14 @@ const pickups = {
         if (player.altFireType) {
           player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 18);
           audio.play('pickupCollect');
-          this.popups.push({
-            x: drone.x,
-            y: drone.y - 34,
-            label: 'OVERDRIVE +',
-            color: '#d56cff',
-            life: 900
-          });
+          streakCallout.show('OVERDRIVE +', '#d56cff', 1200, 2.5);
           return false;
         }
         const canCollect = player.altFireCooldown <= 0;
         if (!canCollect) return p.life > 0;
         audio.play('pickupCollect');
         player.activateAltFire(p.type);
-        this.popups.push({
-          x: drone.x,
-          y: drone.y - 34,
-          label: `${ALT_FIRE_LABELS[p.type]} READY`,
-          color: p.type === 'spread' ? '#ffcc00' : '#a3122a',
-          life: 1200
-        });
+        streakCallout.showAltFire(p.type);
         return false;
       }
       return p.life > 0;
@@ -544,10 +541,13 @@ const screenNuke = {
     this.ring    = 0;
     this.maxRing = Math.sqrt(canvas.width * canvas.width + canvas.height * canvas.height);
     this.flash   = 1;
-    this.rings   = [
-      { r: 0, color: '#ffffff', width: 6, speed: 1.0 },
-      { r: 0, color: COLOR_CYAN, width: 4, speed: 0.85 },
-      { r: 0, color: COLOR_PINK, width: 3, speed: 0.7 },
+    const _wc = STAGE_ENEMY_COLORS[Math.min(stage.current - 1, 9)];
+    this.rings = [
+      { r:    0, color: '#ffffff', width: 3,   speed: 1.0, alphaMult: 1.00 }, // shock front
+      { r:  -60, color: _wc,      width: 9,   speed: 1.0, alphaMult: 0.85 }, // main pressure wave
+      { r: -120, color: _wc,      width: 5.5, speed: 1.0, alphaMult: 0.50 }, // secondary
+      { r: -185, color: _wc,      width: 3,   speed: 1.0, alphaMult: 0.25 }, // tertiary
+      { r: -250, color: _wc,      width: 1.5, speed: 1.0, alphaMult: 0.10 }, // ghost trail
     ];
     stage.shakeTimer     = 800;
     stage.shakeIntensity = 14;
@@ -601,15 +601,19 @@ const screenNuke = {
 
     for (const r of this.rings) {
       if (r.r <= 0) continue;
+      const fade  = Math.max(0, 1 - r.r / this.maxRing);
+      const alpha = fade * (r.alphaMult || 1.0);
       ctx.save();
-      ctx.globalAlpha = Math.max(0, 1 - r.r / this.maxRing);
+      // Glow bloom pass
+      ctx.globalAlpha = alpha * 0.2;
       ctx.strokeStyle = r.color;
-      ctx.lineWidth   = r.width;
+      ctx.lineWidth   = r.width * 6;
       ctx.beginPath();
       ctx.arc(drone.x, drone.y, r.r, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.globalAlpha *= 0.3;
-      ctx.lineWidth    = r.width * 4;
+      // Core ring
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth   = r.width;
       ctx.stroke();
       ctx.restore();
     }
