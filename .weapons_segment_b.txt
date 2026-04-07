@@ -1,0 +1,181 @@
+  const screenNuke = {
+    active:   false,
+    ring:     0,       // expanding radius
+    maxRing:  0,       // max radius to cover screen
+    flash:    0,       // white flash alpha
+    rings:    [],      // color rings for visual effect
+
+    fire() {
+      if (!player.ultReady || this.active || player.ultUses <= 0) return;
+      player.ultReady = false;
+      player.ultUses--;
+      player.ultCharge = 0;
+      this.active  = true;
+      this.ring    = 0;
+      this.maxRing = Math.sqrt(canvas.width * canvas.width + canvas.height * canvas.height);
+      this.flash   = 1;
+      this.rings   = [
+        { r: 0, color: '#ffffff', width: 6, speed: 1.0 },
+        { r: 0, color: COLOR_CYAN,   width: 4, speed: 0.85 },
+        { r: 0, color: COLOR_PINK,   width: 3, speed: 0.7 },
+      ];
+      // screen shake
+      stage.shakeTimer     = 800;
+      stage.shakeIntensity = 14;
+      // slow-mo for dramatic effect
+      stage.slowmoTimer    = 600;
+    },
+
+    update(delta) {
+      if (!this.active) return;
+      const dt  = delta / 1000;
+      const spd = 1800; // px/s expansion speed
+
+      // expand rings
+      for (const r of this.rings) {
+        r.r += spd * r.speed * dt;
+      }
+      this.ring = this.rings[0].r;
+
+      // flash fades
+      this.flash = Math.max(0, this.flash - dt * 3);
+
+      // kill enemies the leading ring passes over
+      for (let i = shards.pool.length - 1; i >= 0; i--) {
+        const s  = shards.pool[i];
+        const dx = s.x - drone.x, dy = s.y - drone.y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d <= this.ring && !s._nuked) {
+          s._nuked = true;
+          s.shieldHp = 0;
+          s.hp       = 0;
+          // kill FX
+          impactFX.onKill(s.x, s.y, s.color);
+          fragments.burst(s.x, s.y, s.color, s.size, s.isElite);
+          burstParticles.spawn(s.x, s.y, s.color);
+          smokeParticles.spawn(s.x, s.y, s.color);
+          stage.onKill(s.isElite, true); // fromNuke=true: no ult charge
+          shards.pool.splice(i, 1);
+        }
+      }
+
+      // done when all rings expanded past screen
+      if (this.rings[this.rings.length - 1].r > this.maxRing) {
+        this.active = false;
+        this.rings  = [];
+      }
+    },
+
+    draw() {
+      if (!this.active) return;
+
+      // white flash overlay
+      if (this.flash > 0) {
+        ctx.save();
+        ctx.globalAlpha    = this.flash * 0.4;
+        ctx.fillStyle      = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+
+      // expanding rings
+      for (const r of this.rings) {
+        if (r.r <= 0) continue;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - r.r / this.maxRing);
+        ctx.strokeStyle = r.color;
+        ctx.lineWidth   = r.width;
+        ctx.beginPath();
+        ctx.arc(drone.x, drone.y, r.r, 0, Math.PI * 2);
+        ctx.stroke();
+        // bloom pass — wider, dimmer
+        ctx.globalAlpha *= 0.3;
+        ctx.lineWidth    = r.width * 4;
+        ctx.stroke();
+        ctx.restore();
+      }
+    },
+
+    reset() {
+      this.active = false;
+      this.ring   = 0;
+      this.flash  = 0;
+      this.rings  = [];
+    }
+  };
+
+  // ─── CHAIN LIGHTNING ─────────────────────────────────────────────────────────
+  const chainLightning = {
+    bolts: [],   // { segments: [{x,y}], life, color }
+    RANGE: 120,
+
+    // called on each kill when chain >= 8
+    trigger(killX, killY) {
+      const arcs = player.chain >= 15 ? 2 : 1;
+      const used = new Set();
+
+      for (let a = 0; a < arcs; a++) {
+        let best = null, bestDist = this.RANGE;
+        for (const s of shards.pool) {
+          if (used.has(s)) continue;
+          const dx = s.x - killX, dy = s.y - killY;
+          const d  = Math.sqrt(dx * dx + dy * dy);
+          if (d < bestDist) { bestDist = d; best = s; }
+        }
+        if (!best) break;
+        used.add(best);
+
+        // deal damage
+        const killed = applyDamageToShard(best, 3);
+        best.flashTimer = 200;
+        best.hpBarTimer = 1500;
+        hitSparks.emit(best.x, best.y, 1, 0, COLOR_CYAN);
+
+        // generate zigzag bolt segments
+        const segs = [{ x: killX, y: killY }];
+        const steps = 6 + Math.floor(Math.random() * 4);
+        for (let i = 1; i < steps; i++) {
+          const t  = i / steps;
+          const mx = killX + (best.x - killX) * t + (Math.random() - 0.5) * 30;
+          const my = killY + (best.y - killY) * t + (Math.random() - 0.5) * 30;
+          segs.push({ x: mx, y: my });
+        }
+        segs.push({ x: best.x, y: best.y });
+
+        this.bolts.push({ segments: segs, life: 1, color: COLOR_CYAN });
+
+        // if target dies from lightning, kill it
+        if (killed) destroyShard(best);
+      }
+    },
+
+    update(delta) {
+      const dt = delta / 1000;
+      this.bolts = this.bolts.filter(b => {
+        b.life -= dt * 5;  // fade in ~0.2s
+        return b.life > 0;
+      });
+    },
+
+    draw() {
+      for (const b of this.bolts) {
+        ctx.save();
+        ctx.globalAlpha = b.life * 0.9;
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        ctx.moveTo(b.segments[0].x, b.segments[0].y);
+        for (let i = 1; i < b.segments.length; i++) {
+          ctx.lineTo(b.segments[i].x, b.segments[i].y);
+        }
+        ctx.stroke();
+        // bloom pass
+        ctx.globalAlpha = b.life * 0.3;
+        ctx.lineWidth   = 6;
+        ctx.stroke();
+        ctx.restore();
+      }
+    },
+
+    reset() { this.bolts = []; }
+  };

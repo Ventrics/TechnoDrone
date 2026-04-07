@@ -169,19 +169,26 @@ const impactFX = {
   },
 
   onKill(x, y, color) {
-    this.flashes.push({ x, y, r: 0, maxR: 30, alpha: 1.0 });
-    this.rings.push({ x, y, r: 3, maxR: 55, alpha: 1.0,  color });
-    this.rings.push({ x, y, r: 3, maxR: 88, alpha: 0.55, color });
+    this.flashes.push({ x, y, r: 0, maxR: 30, alpha: 1.0, delay: 0 });
+    const ringStack = [
+      { r: 2,  maxR: 28, alpha: 1.0,  color: '#ffffff', delay: 0   },
+      { r: 4,  maxR: 44, alpha: 0.9,  color,             delay: 60  },
+      { r: 8,  maxR: 66, alpha: 0.62, color,             delay: 130 },
+      { r: 14, maxR: 92, alpha: 0.38, color,             delay: 210 },
+    ];
+    ringStack.forEach(ring => this.rings.push({ x, y, ...ring }));
   },
 
   update(delta) {
     const dt = delta / 1000;
     this.flashes = this.flashes.filter(f => {
+      if ((f.delay || 0) > 0) { f.delay -= delta; return true; }
       f.r     += (f.maxR - f.r) * dt * 10;
       f.alpha -= dt * 7;
       return f.alpha > 0;
     });
     this.rings = this.rings.filter(r => {
+      if ((r.delay || 0) > 0) { r.delay -= delta; return true; }
       r.r     += (r.maxR - r.r) * dt * 6;
       r.alpha -= dt * 4.5;
       return r.alpha > 0;

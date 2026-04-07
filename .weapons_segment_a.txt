@@ -1,0 +1,378 @@
+  const bullets = {
+    pool:     [],
+    cooldown: 0,
+
+    fire(x, y, angle = 0, opts = {}) {
+      this.pool.push({
+        x,
+        y,
+        angle,
+        len: opts.len || 22,
+        damage: opts.damage || player.effectiveDamage,
+        speedMul: opts.speedMul || 1,
+        pierce: opts.pierce || 0,
+        hitRadius: opts.hitRadius || 8,
+        tint: opts.tint || null,
+        heavy: !!opts.heavy,
+        overdriving: !!opts.overdriving,
+        spawnTime: getNow()
+      });
+    },
+
+    // Spread and Flame are handled automatically now — no manual fireAlt needed.
+    // This method is kept as a no-op to avoid reference errors.
+    fireAlt() {},
+
+    update(delta) {
+      const dt = delta / 1000;
+      if (this.cooldown > 0) this.cooldown -= delta;
+
+      const spreadActive = player.altFireType === 'spread' && player.spreadFuel > 0 && (keys['k'] || keys['K']) && !player.overheated;
+      const primaryFiring = isFireHeld() && !player.overheated && !spreadActive;
+      if ((primaryFiring || spreadActive) && this.cooldown <= 0) {
+        const x = drone.x + 14, y = drone.y;
+        if (spreadActive) {
+          [-0.22, -0.11, 0, 0.11, 0.22].forEach(a => {
+            this.fire(x, y, a, { damage: Math.max(1, Math.ceil(player.effectiveDamage * 0.9)), len: 24, tint: '#ffcc00' });
+          });
+          player.spreadFuel = Math.max(0, player.spreadFuel - 10);
+        } else {
+          this.fire(x, y, 0, player.overdriveActive ? { pierce: 2, overdriving: true } : {});
+        }
+        this.cooldown = player.fireRateCooldown;
+        player.heat = Math.min(100, player.heat + player.HEAT_PER_SHOT);
+      }
+
+      const baseSpeed = isPlayerMoving() ? BULLET_SPEED : BULLET_SPEED * 1.2;
+      this.pool = this.pool.filter(b => {
+        const speed = baseSpeed * (b.speedMul || 1);
+        const a = b.angle || 0;
+        b.x += Math.cos(a) * speed * dt;
+        b.y += Math.sin(a) * speed * dt;
+        return b.x < canvas.width + 50 && b.y > -50 && b.y < canvas.height + 50;
+      });
+    },
+
+    draw() {
+      this.pool.forEach(b => {
+        const tint = b.tint || (b.heavy ? COLOR_PINK : COLOR_CYAN);
+        const len = b.len;
+        const angle = b.angle || 0;
+        ctx.save();
+        ctx.lineCap = 'round';
+
+        setGlow(tint, b.heavy ? 34 : 22);
+        ctx.strokeStyle = tint;
+        ctx.lineWidth = b.heavy ? 5.5 : b.pierce > 0 ? 4 : 3;
+        ctx.globalAlpha = 0.38;
+        ctx.beginPath();
+        ctx.moveTo(b.x - Math.cos(angle) * len, b.y - Math.sin(angle) * len);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        setGlow('#ffffff', b.heavy ? 10 : 6);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = b.heavy ? 2.2 : 1.4;
+        ctx.globalAlpha = 0.95;
+        ctx.beginPath();
+        ctx.moveTo(b.x - Math.cos(angle) * len * 0.65, b.y - Math.sin(angle) * len * 0.65);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        const tipSize = b.heavy ? 3.3 : 2.2;
+        ctx.globalAlpha = 0.18;
+        ctx.shadowColor = tint;
+        ctx.shadowBlur = b.heavy ? 40 : 26;
+        ctx.fillStyle = tint;
+        ctx.beginPath(); ctx.arc(b.x, b.y, tipSize * 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 5;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(b.x, b.y, tipSize, 0, Math.PI * 2); ctx.fill();
+
+        if (b.overdriving) {
+          // orange overdrive ring
+          ctx.globalAlpha = 0.35;
+          ctx.strokeStyle = '#ff6600';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, tipSize * 3.6, 0, Math.PI * 2);
+          ctx.stroke();
+          // cyan pierce corona — signals the bullet will pierce
+          ctx.globalAlpha = 0.25;
+          ctx.strokeStyle = COLOR_CYAN;
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = COLOR_CYAN;
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, tipSize * 5.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        clearGlow();
+        ctx.restore();
+      });
+    }
+  };
+
+  const pickups = {
+    pool: [],
+    popups: [],
+
+    spawnAltFireOrb(x, y, type) {
+      this.pool.push({ x, y, type, life: 8000, radius: 10 });
+    },
+
+    update(delta) {
+      const dt = delta / 1000;
+      this.pool = this.pool.filter(p => {
+        p.life -= delta;
+        const dx = drone.x - p.x, dy = drone.y - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0) {
+          const driftSpeed = 40 + Math.max(0, 200 - dist) * 0.8;
+          p.x += (dx / dist) * driftSpeed * dt;
+          p.y += (dy / dist) * driftSpeed * dt;
+        }
+        p.radius = 10 + 3 * Math.sin(getNow() * 0.008);
+
+        if (dist < 28) {
+          if (player.altFireType) {
+            player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 18);
+            this.popups.push({
+              x: drone.x,
+              y: drone.y - 34,
+              label: 'OVERDRIVE +',
+              color: '#ff6600',
+              life: 900
+            });
+            return false;
+          }
+          const canCollect = player.altFireCooldown <= 0;
+          if (!canCollect) return p.life > 0;
+          player.activateAltFire(p.type);
+          this.popups.push({
+            x: drone.x,
+            y: drone.y - 34,
+            label: `${ALT_FIRE_LABELS[p.type]} READY`,
+            color: p.type === 'spread' ? '#ffcc00' : '#ff6600',
+            life: 1200
+          });
+          return false;
+        }
+        return p.life > 0;
+      });
+
+      this.popups = this.popups.filter(t => {
+        t.y -= 40 * dt;
+        t.life -= delta;
+        return t.life > 0;
+      });
+    },
+
+    draw() {
+      this.pool.forEach(p => {
+        const color = p.type === 'spread' ? '#ffcc00' : '#ff6600';
+        const r = p.radius;
+        ctx.save();
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
+        grad.addColorStop(0, color + 'aa');
+        grad.addColorStop(0.4, color + '44');
+        grad.addColorStop(1, color + '00');
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      this.popups.forEach(t => {
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 18px monospace';
+        ctx.globalAlpha = Math.min(1, t.life / 500);
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.label, t.x, t.y);
+        ctx.restore();
+      });
+    },
+
+    reset() { this.pool = []; this.popups = []; }
+  };
+
+  // ─── FLAMETHROWER ─────────────────────────────────────────────────────────────
+  const flamethrower = {
+    particles:    [],
+    tickTimer:    0,
+    TICK_INTERVAL: 80,
+    RANGE:        220,
+    CONE_ANGLE:   Math.PI / 180 * 25,
+    startupProgress: 0,
+    STARTUP_MS:  280,
+
+    update(delta) {
+      if (player.altFireType !== 'flame') {
+        this.particles = [];
+        this.tickTimer = 0;
+        this.startupProgress = 0;
+        return;
+      }
+      const dt       = delta / 1000;
+      const holding  = (keys['k'] || keys['K']) && !player.overheated;
+      const hasFuel  = player.flameFuel > 0;
+
+      if (holding && hasFuel) {
+        // Ramp up from ship to max range
+        this.startupProgress = Math.min(1, this.startupProgress + delta / this.STARTUP_MS);
+        const effectiveRange = this.RANGE * this.startupProgress;
+
+        // Deplete fuel
+        player.flameFuel = Math.max(0, player.flameFuel - 22 * dt);
+
+        // Damage ticks
+        this.tickTimer -= delta;
+        if (this.tickTimer <= 0) {
+          this.tickTimer = this.TICK_INTERVAL;
+          player.heat = Math.min(100, player.heat + 2);
+          this._dealDamage();
+        }
+
+        // Spawn rope fire particles — clamped to current reach
+        for (let i = 0; i < 6; i++) {
+          const t = 0.12 + Math.random() * 0.92;
+          const angleWave = Math.sin(getNow() * 0.01 + t * 8) * 10;
+          const a = ((Math.random() - 0.5) * 10 + angleWave) * Math.PI / 180;
+          const dist = 22 + effectiveRange * t;
+          this.particles.push({
+            x:     drone.x + Math.cos(a) * dist,
+            y:     drone.y + Math.sin(a) * dist,
+            life:  110 + Math.random() * 120,
+            size:  3 + Math.random() * 6,
+            alpha: 0.6 + Math.random() * 0.3,
+            warm:  Math.random() > 0.4,
+          });
+        }
+
+        // Fuel depleted — end mode
+        if (player.flameFuel <= 0) {
+          player.altFireType = null;
+          player.flameFuel = 0;
+        }
+      } else {
+        // Retract when not firing
+        this.startupProgress = Math.max(0, this.startupProgress - delta / (this.STARTUP_MS * 0.6));
+      }
+
+      // Fade particles
+      this.particles = this.particles.filter(p => {
+        p.life -= delta;
+        p.alpha *= 0.96;
+        return p.life > 0;
+      });
+    },
+
+    _dealDamage() {
+      const effectiveRange = this.RANGE * this.startupProgress;
+      const dmg = Math.max(1, Math.ceil(player.effectiveDamage * 0.6));
+      for (let i = shards.pool.length - 1; i >= 0; i--) {
+        const s  = shards.pool[i];
+        const dx = s.x - drone.x;
+        const dy = s.y - drone.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > effectiveRange) continue;
+        if (Math.abs(Math.atan2(dy, dx)) > this.CONE_ANGLE) continue;
+        const killed = applyDamageToShard(s, dmg);
+        hitSparks.emit(s.x, s.y, 1, 0, '#ff6600');
+        if (killed) destroyShard(s);
+      }
+    },
+
+    draw() {
+      if (player.altFireType !== 'flame') return;
+      const holding = (keys['k'] || keys['K']) && player.flameFuel > 0 && !player.overheated;
+      const reach = this.startupProgress;
+
+      if (holding || reach > 0) {
+        const effectiveRange = this.RANGE * reach;
+        ctx.save();
+        const pulse = getNow() * 0.016;
+        const ribbon = [];
+        for (let i = 0; i <= 11; i++) {
+          const t = i / 11;
+          const x = drone.x + 16 + t * effectiveRange;
+          const sway = (Math.sin(pulse + t * 5.5) * (2 + t * 10) + Math.sin(pulse * 0.6 + t * 10) * (1 + t * 5)) * reach;
+          const y = drone.y + sway;
+          const size = (6 + t * 24) * reach;
+          ribbon.push({ x, y, t, size });
+        }
+
+        ctx.shadowColor = '#ff5a1f';
+        ctx.shadowBlur = 26;
+        ribbon.forEach((p, i) => {
+          const backAlpha = 0.08 + p.t * 0.18;
+          ctx.globalAlpha = backAlpha;
+          ctx.fillStyle = '#ff4a1a';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.globalAlpha = 0.12 + p.t * 0.26;
+          ctx.fillStyle = '#ff8a1f';
+          ctx.beginPath();
+          ctx.arc(p.x + 2, p.y, p.size * 0.62, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (i > 1) {
+            ctx.globalAlpha = 0.16 + p.t * 0.34;
+            ctx.fillStyle = p.t > 0.72 ? '#fff3bf' : '#ffd36a';
+            ctx.beginPath();
+            ctx.arc(p.x + 4, p.y, p.size * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+
+        ctx.globalAlpha = 0.22 * reach;
+        ctx.fillStyle = '#ff5a1f';
+        ctx.beginPath();
+        ctx.moveTo(drone.x + 14, drone.y - 4 * reach);
+        ribbon.forEach(p => ctx.lineTo(p.x, p.y - p.size * 0.42));
+        ribbon.slice().reverse().forEach(p => ctx.lineTo(p.x, p.y + p.size * 0.42));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Particles
+      this.particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.shadowColor = p.warm ? '#ff8800' : '#ff5500';
+        ctx.shadowBlur  = 12;
+        ctx.fillStyle   = p.warm ? '#ffb347' : '#ff5500';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    },
+
+    reset() {
+      this.particles = [];
+      this.tickTimer = 0;
+      this.startupProgress = 0;
+    }
+  };
