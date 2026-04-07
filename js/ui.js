@@ -599,7 +599,7 @@ function drawTitleScreen() {
   const cx = W / 2, cy = H / 2;
   const now = getNow();
   const layout = getTitleScreenLayout();
-  const { headingY, startRunY, leaderboardY, dividerY, statsY, statXs, stageNodesY, layoutScale, compact, dividerWidth } = layout;
+  const { headingY, startRunY, tutorialY, leaderboardY, dividerY, statsY, statXs, stageNodesY, layoutScale, compact, dividerWidth } = layout;
   const flicker = 0.9 + 0.1 * Math.sin(now * 0.014) * Math.sin(now * 0.029);
   const menuPulse = 0.6 + 0.4 * Math.sin(now * 0.0032);
   const barProg  = Math.min(1, (now - titleSelectionChangedAt) / 220);
@@ -669,6 +669,7 @@ function drawTitleScreen() {
 
   const options = [
     { label: 'START RUN', y: startRunY },
+    { label: 'TUTORIAL', y: tutorialY },
     { label: 'LEADERBOARD', y: leaderboardY }
   ];
 
@@ -746,14 +747,19 @@ function drawTitleActionText(label, y, fontSize, isActive) {
 function isTitleOptionHovered(idx) {
   const layout = getTitleScreenLayout();
   const actionFontSize = Math.round(Math.max(28, Math.min(42, 42 * layout.layoutScale)));
-  const label = idx === 0 ? 'START RUN' : 'LEADERBOARD';
-  const y = idx === 0 ? layout.startRunY : layout.leaderboardY;
+  const options = [
+    { label: 'START RUN', y: layout.startRunY },
+    { label: 'TUTORIAL', y: layout.tutorialY },
+    { label: 'LEADERBOARD', y: layout.leaderboardY }
+  ];
+  const option = options[idx];
+  if (!option) return false;
   const hitPaddingX = 32 * layout.layoutScale;
   const hitPaddingY = 22 * layout.layoutScale;
-  const width = getTitleOptionWidth(label, actionFontSize);
+  const width = getTitleOptionWidth(option.label, actionFontSize);
   return (
     Math.abs(mouseX - canvas.width / 2) <= (width / 2 + hitPaddingX) &&
-    Math.abs(mouseY - y) <= hitPaddingY
+    Math.abs(mouseY - option.y) <= hitPaddingY
   );
 }
 
@@ -764,7 +770,8 @@ function getTitleScreenLayout() {
   const compact = W < 920;
   const headingY = cy - 122 * layoutScale;
   const startRunY = cy + 18 * layoutScale;
-  const leaderboardY = startRunY + 34 * layoutScale;
+  const tutorialY = startRunY + 34 * layoutScale;
+  const leaderboardY = tutorialY + 34 * layoutScale;
   const dividerY = leaderboardY + 34 * layoutScale;
   const statsY = dividerY + 42 * layoutScale;
   const dividerWidth = Math.min(W * 0.52, 320 * layoutScale);
@@ -775,6 +782,7 @@ function getTitleScreenLayout() {
   return {
     headingY,
     startRunY,
+    tutorialY,
     leaderboardY,
     dividerY,
     statsY,
@@ -2197,20 +2205,22 @@ function startTutorialFromDevMenu() {
 function updateTitle(delta) {
   waveField.update(delta);
   titleGridOff += delta * 0.022;
+  const titleOptionCount = 3;
   const keyboardNavigated =
     justPressed['ArrowUp'] || justPressed['ArrowDown'] ||
     justPressed['w'] || justPressed['W'] ||
     justPressed['s'] || justPressed['S'];
 
   if (keyboardNavigated) {
-    titleSelection = 1 - titleSelection;
+    const direction = (justPressed['ArrowUp'] || justPressed['w'] || justPressed['W']) ? -1 : 1;
+    titleSelection = (titleSelection + direction + titleOptionCount) % titleOptionCount;
     titleSelectionChangedAt = getNow();
     audio.play('menuSelect');
     mouseMoved = false;
   }
 
   const hoveredSelection = mouseMoved
-    ? (isTitleOptionHovered(0) ? 0 : (isTitleOptionHovered(1) ? 1 : -1))
+    ? (isTitleOptionHovered(0) ? 0 : (isTitleOptionHovered(1) ? 1 : (isTitleOptionHovered(2) ? 2 : -1)))
     : -1;
   if (hoveredSelection !== -1 && hoveredSelection !== titleSelection) {
     titleSelection = hoveredSelection;
@@ -2220,7 +2230,11 @@ function updateTitle(delta) {
   if (justPressed['Enter'] || justPressed[' ']) {
     audio.play('menuConfirm');
     if (titleSelection === 0) startGame();
-    else {
+    else if (titleSelection === 1) {
+      tutorial.start();
+      gameState = 'tutorial';
+      audio.playMusic('gameplay');
+    } else {
       gameState = 'leaderboard';
       leaderboard.fetchScores();
     }

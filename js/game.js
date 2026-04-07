@@ -483,6 +483,7 @@ canvas.addEventListener('click', e => {
     const layout = getTitleScreenLayout();
     const actionFontSize = Math.round(Math.max(28, Math.min(42, 42 * layout.layoutScale)));
     const startRunWidth = getTitleOptionWidth('START RUN', actionFontSize);
+    const tutorialWidth = getTitleOptionWidth('TUTORIAL', actionFontSize);
     const leaderboardWidth = getTitleOptionWidth('LEADERBOARD', actionFontSize);
 
     const hitPaddingX = 32 * layout.layoutScale;
@@ -490,16 +491,26 @@ canvas.addEventListener('click', e => {
     const inStartRun =
       Math.abs(e.offsetX - canvas.width / 2) <= (startRunWidth / 2 + hitPaddingX) &&
       Math.abs(e.offsetY - layout.startRunY) <= hitPaddingY;
+    const inTutorial =
+      Math.abs(e.offsetX - canvas.width / 2) <= (tutorialWidth / 2 + hitPaddingX) &&
+      Math.abs(e.offsetY - layout.tutorialY) <= hitPaddingY;
     const inLeaderboard =
       Math.abs(e.offsetX - canvas.width / 2) <= (leaderboardWidth / 2 + hitPaddingX) &&
       Math.abs(e.offsetY - layout.leaderboardY) <= hitPaddingY;
 
     if (inLeaderboard) {
-      titleSelection = 1;
+      titleSelection = 2;
       titleSelectionChangedAt = getNow();
       audio.play('menuConfirm');
       gameState = 'leaderboard';
       leaderboard.fetchScores();
+    } else if (inTutorial) {
+      titleSelection = 1;
+      titleSelectionChangedAt = getNow();
+      audio.play('menuConfirm');
+      tutorial.start();
+      gameState = 'tutorial';
+      audio.playMusic('gameplay');
     } else if (inStartRun) {
       titleSelection = 0;
       titleSelectionChangedAt = getNow();
