@@ -320,7 +320,7 @@ function render() {
   ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
   ctx.clip();
 
-  if (stage.shakeTimer > 0 && stage.shakeIntensity > 0) {
+  if (gameState !== 'tutorial' && stage.shakeTimer > 0 && stage.shakeIntensity > 0) {
     const sx = (Math.random() * 2 - 1) * stage.shakeIntensity;
     const sy = (Math.random() * 2 - 1) * stage.shakeIntensity;
     ctx.translate(sx, sy);

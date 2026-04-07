@@ -127,18 +127,7 @@ function writeSave() {
 }
 
 const save = loadSave();
-if (save.highScore !== 0) {
-  save.highScore = 0;
-  writeSave();
-}
 let furthestStage = loadFurthestStage();
-if (furthestStage !== 1) {
-  furthestStage = 1;
-  writeFurthestStage(1);
-}
-if (loadPlayerName()) {
-  writePlayerName('');
-}
 
 let gameState               = 'title';
 let titleGridOff            = 0;
