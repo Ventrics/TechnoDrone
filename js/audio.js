@@ -77,7 +77,6 @@ window.audio = (function() {
 
     // Load WAV files using Audio element pools (works on file://)
     _loadPool('shoot', 'sounds/shoot.wav', 4);
-    _loadPool('sniperCharge', 'sounds/shoot.wav', 3);
 
     // Commissioned soundtrack — routed through Web Audio graph for unified processing
     _bgmEl = new Audio('Techno Drone V1 Master Chain .mp3');
@@ -339,7 +338,10 @@ window.audio = (function() {
     },
     
     // Enemy Sounds
-    sniperWarning: () => _playPool('sniperCharge', 0.65, { playbackRate: 0.12 }),
+    sniperWarning: () => [
+      createNoise((g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.06); }, 0.06),
+      createOsc('sine', 700, (g,t)=>{ g.setValueAtTime(0.08, t); g.exponentialRampToValueAtTime(0.01, t+0.04); }, 0.04)
+    ],
     sniperFire: () => [
       createNoise((g,t)=>{ g.setValueAtTime(0.18, t); g.exponentialRampToValueAtTime(0.01, t+0.08); }, 0.08),
       createOsc('sine', 500, (g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.05); }, 0.05)

@@ -142,7 +142,7 @@ function update(delta) {
   screenNuke.update(effectiveDelta);
   streakCallout.update(effectiveDelta);
 
-  if (justPressed['q'] || justPressed['Q']) screenNuke.fire();
+  if (tutorialAllowsControl('nuke') && (justPressed['q'] || justPressed['Q'])) screenNuke.fire();
 }
 
 function render() {
@@ -379,7 +379,7 @@ function render() {
     const s = shards.pool[i];
     bloomCtx.fillStyle = s.color;
     bloomCtx.beginPath();
-    bloomCtx.arc(s.x, s.y, s.size * 0.25, 0, Math.PI * 2);
+    bloomCtx.arc(s.x, s.y, Math.max(0.1, (s.size || 0) * 0.25), 0, Math.PI * 2);
     bloomCtx.fill();
   }
   for (let i = 0; i < fragments.pool.length; i++) {
@@ -387,7 +387,7 @@ function render() {
     bloomCtx.globalAlpha = f.alpha * 0.5;
     bloomCtx.fillStyle = f.color;
     bloomCtx.beginPath();
-    bloomCtx.arc(f.x, f.y, f.size * 0.4, 0, Math.PI * 2);
+    bloomCtx.arc(f.x, f.y, Math.max(0.1, (f.size || 0) * 0.4), 0, Math.PI * 2);
     bloomCtx.fill();
   }
   {

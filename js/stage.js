@@ -36,21 +36,30 @@ const stage = {
   shakeIntensity: 0,
   slowmoTimer: 0,
   labelScale: 1,
+  chainBreakFlash: 0,
+  chainBreakCount: 0,
 
   onKill(enemy, fromNuke = false) {
     const isElite = !!(typeof enemy === 'boolean' ? enemy : enemy?.isElite);
     const scoreValue = getEnemyScoreValue(enemy);
     this.kills++;
     this.totalKills++;
-    if (!fromNuke) player.score += scoreValue;
     player.onKill(isElite, fromNuke);
+    const scoreAward = fromNuke ? 0 : scoreValue * player.chainMultiplier;
+    if (!fromNuke) {
+      player.score += scoreAward;
+      const c = player.chain;
+      if (c === 75) streakCallout.show('MAXIMUM CHAIN', '#ffffff', 2200, 3.8);
+      else if (c === 50) streakCallout.show('CHAIN x4', '#ff007f', 1800, 3.2);
+      else if (c === 30) streakCallout.show('CHAIN x3', '#ffd400', 1600, 2.8);
+      else if (c === 15) streakCallout.show('CHAIN x2', '#31afd4', 1400, 2.4);
+    }
 
     if (isElite) {
       const type = ALT_FIRE_TYPES[altFireDropIndex % ALT_FIRE_TYPES.length];
       altFireDropIndex++;
       if (player.altFireType) {
         player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 24);
-        streakCallout.show('OVERDRIVE +', '#d56cff', 1200, 2.5);
       } else {
         player.activateAltFire(type);
         audio.play('pickupCollect');
@@ -65,6 +74,16 @@ const stage = {
       this.flashTimer = 700;
       this.shakeTimer = 300;
       this.shakeIntensity = 6;
+    }
+
+    return scoreAward;
+  },
+
+  onChainBroken(count, reason = 'damage') {
+    if (reason === 'damage') {
+      this.chainBreakFlash = 1;
+      this.chainBreakCount = count;
+      streakCallout.show('CHAIN LOST', '#ff3030', 1400, 2.6);
     }
   },
 
@@ -102,6 +121,7 @@ const stage = {
       this.shakeTimer -= delta;
       this.shakeIntensity = 8 * (this.shakeTimer / 1500);
     }
+    if (this.chainBreakFlash > 0) this.chainBreakFlash = Math.max(0, this.chainBreakFlash - delta / 500);
     if (this.slowmoTimer > 0) this.slowmoTimer -= delta;
 
     if (gameState === 'playing') {
@@ -134,6 +154,8 @@ const stage = {
     this.shakeIntensity = 0;
     this.slowmoTimer = 0;
     this.labelScale = 1;
+    this.chainBreakFlash = 0;
+    this.chainBreakCount = 0;
     COLOR_BG = STAGE_BG_COLORS[0];
     mechanicAssignment = buildMechanicAssignment();
   }

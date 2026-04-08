@@ -5,18 +5,33 @@ const streakCallout = {
   scale: 1,
   startScale: 2.0,
   color: '#ffffff',
+  secondaryText: '',
+  secondaryTimer: 0,
+  secondaryDuration: 1500,
+  secondaryScale: 1,
+  secondaryStartScale: 2.0,
+  secondaryColor: '#ffffff',
 
   showOverdrive() {
-    this.show('OVERDRIVE', '#d56cff');
+    this.show('OVERDRIVE', '#d56cff', 2200, 4.35, true);
   },
 
   showAltFire(type) {
-    if (type === 'spread') this.show('SPREAD SHOT', '#ffd400', 2100, 3.0);
-    else if (type === 'bass') this.show('BASS PULSE', '#a3122a', 2100, 3.0);
+    if (type === 'spread') this.show('SPREAD SHOT', '#ffd400', 2400, 4.8);
+    else if (type === 'bass') this.show('BASS PULSE', '#a3122a', 2400, 4.8);
   },
 
-  show(text, color, duration = 1500, startScale = 2.0) {
-    this.text  = text;
+  show(text, color, duration = 1500, startScale = 2.0, preferSecondary = false) {
+    if (preferSecondary && this.timer > 0 && this.text && this.text !== text) {
+      this.secondaryText = text;
+      this.secondaryColor = color;
+      this.secondaryTimer = duration;
+      this.secondaryDuration = duration;
+      this.secondaryStartScale = startScale;
+      this.secondaryScale = startScale;
+      return;
+    }
+    this.text = text;
     this.color = color;
     this.timer = duration;
     this.duration = duration;
@@ -25,33 +40,82 @@ const streakCallout = {
   },
 
   update(delta) {
-    if (this.timer <= 0) return;
-    this.timer -= delta;
-    const elapsed = this.duration - this.timer;
-    if (elapsed < 300) {
-      this.scale = this.startScale - ((this.startScale - 1.0) * (elapsed / 300));
-    } else {
-      this.scale = 1.0;
+    if (this.timer > 0) {
+      this.timer -= delta;
+      const elapsed = this.duration - this.timer;
+      if (elapsed < 420) {
+        const p = elapsed / 420;
+        const eased = 1 - Math.pow(1 - p, 3);
+        this.scale = this.startScale - ((this.startScale - 1.0) * eased);
+      } else {
+        this.scale = 1.0;
+      }
+      if (this.timer <= 0) this.text = '';
+    }
+    if (this.secondaryTimer > 0) {
+      this.secondaryTimer -= delta;
+      const elapsed = this.secondaryDuration - this.secondaryTimer;
+      if (elapsed < 420) {
+        const p = elapsed / 420;
+        const eased = 1 - Math.pow(1 - p, 3);
+        this.secondaryScale = this.secondaryStartScale - ((this.secondaryStartScale - 1.0) * eased);
+      } else {
+        this.secondaryScale = 1.0;
+      }
+      if (this.secondaryTimer <= 0) this.secondaryText = '';
     }
   },
 
   draw() {
-    if (this.timer <= 0) return;
-    const alpha = Math.min(1, this.timer / 400);
+    if (this.timer <= 0 && this.secondaryTimer <= 0) return;
+    const drawCallout = (text, color, timer, duration, scale, y, isSecondary = false) => {
+      if (timer <= 0 || !text) return;
+      const alphaIn = Math.min(1, (duration - timer) / 220);
+      const alphaOut = Math.min(1, timer / 520);
+      const alpha = Math.min(alphaIn, alphaOut);
+      const fontSize = Math.round((isSecondary ? 34 : 57) * scale);
+      const glowBlur = Math.max(isSecondary ? 12 : 16, (isSecondary ? 20 : 32) * scale);
+
+      ctx.globalAlpha = alpha * 0.2;
+      ctx.font = `${fontSize}px "anatol-mn", sans-serif`;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = glowBlur * 2.1;
+      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
+
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.shadowBlur = glowBlur;
+      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
+
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#f4f0ff';
+      ctx.shadowColor = color;
+      ctx.shadowBlur = Math.max(8, glowBlur * 0.55);
+      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
+    };
+
+    const mainY = PLAY_Y + PLAY_H * 0.35;
+    const secondaryY = mainY + 54;
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.globalAlpha  = alpha * 0.9;
-    ctx.font         = `bold ${Math.round(28 * this.scale)}px monospace`;
-    ctx.fillStyle    = this.color;
-    ctx.fillText(this.text, PLAY_X + PLAY_W / 2, PLAY_Y + PLAY_H * 0.35);
-    ctx.globalAlpha = alpha * 0.3;
-    ctx.font        = `bold ${Math.round(30 * this.scale)}px monospace`;
-    ctx.fillText(this.text, PLAY_X + PLAY_W / 2, PLAY_Y + PLAY_H * 0.35);
+    drawCallout(this.text, this.color, this.timer, this.duration, this.scale, mainY, false);
+    drawCallout(this.secondaryText, this.secondaryColor, this.secondaryTimer, this.secondaryDuration, this.secondaryScale, secondaryY, true);
     ctx.restore();
   },
 
-  reset() { this.timer = 0; this.text = ''; this.duration = 1500; this.scale = 1; this.startScale = 2.0; }
+  reset() {
+    this.timer = 0;
+    this.text = '';
+    this.duration = 1500;
+    this.scale = 1;
+    this.startScale = 2.0;
+    this.secondaryTimer = 0;
+    this.secondaryText = '';
+    this.secondaryDuration = 1500;
+    this.secondaryScale = 1;
+    this.secondaryStartScale = 2.0;
+  }
 };
 
 function isPlayerMoving() {
@@ -77,12 +141,53 @@ function isTutorialDamageStep() {
     tutorial.steps[tutorial.stepIndex].id === 'damage';
 }
 
+function getTutorialStepId() {
+  return typeof tutorial !== 'undefined' &&
+    tutorial &&
+    tutorial.active &&
+    tutorial.steps &&
+    tutorial.steps[tutorial.stepIndex]
+    ? tutorial.steps[tutorial.stepIndex].id
+    : null;
+}
+
+function tutorialAllowsControl(control) {
+  const stepId = getTutorialStepId();
+  if (!stepId) return true;
+  if (control === 'move') return stepId !== 'release';
+
+  switch (stepId) {
+    case 'move':
+      return false;
+    case 'shoot':
+    case 'heat':
+    case 'overdrive':
+      return control === 'fire';
+    case 'dash':
+      return control === 'dash';
+    case 'refund':
+      return control === 'fire' || control === 'dash';
+    case 'damage':
+      return false;
+    case 'spread':
+    case 'bass':
+      return control === 'altFire';
+    case 'nuke':
+      return control === 'nuke';
+    case 'release':
+      return false;
+    default:
+      return true;
+  }
+}
+
 function isAltFireHeld() {
+  if (!tutorialAllowsControl('altFire')) return false;
   return mouseRightDown || keys['k'] || keys['K'];
 }
 
 function isFireHeld() {
-  if (isTutorialNukeStep() || isTutorialDamageStep()) return false;
+  if (!tutorialAllowsControl('fire')) return false;
   return mouseDown || keys['j'] || keys['J'];
 }
 
@@ -293,7 +398,6 @@ const pickups = {
         if (player.altFireType) {
           player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 18);
           audio.play('pickupCollect');
-          streakCallout.show('OVERDRIVE +', '#d56cff', 1200, 2.5);
           return false;
         }
         const canCollect = player.altFireCooldown <= 0;
@@ -472,7 +576,7 @@ const bassPulse = {
         ctx.strokeStyle = waveColor;
         ctx.lineWidth = 16;
         ctx.beginPath();
-        ctx.arc(ox, oy, w.radius, BASE - w.arc, BASE + w.arc);
+        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc, BASE + w.arc);
         ctx.stroke();
 
         ctx.globalAlpha = alpha * 0.9;
@@ -480,7 +584,7 @@ const bassPulse = {
         ctx.strokeStyle = waveHot;
         ctx.lineWidth = 10;
         ctx.beginPath();
-        ctx.arc(ox, oy, w.radius, BASE - w.arc * 0.96, BASE + w.arc * 0.96);
+        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc * 0.96, BASE + w.arc * 0.96);
         ctx.stroke();
 
         ctx.globalAlpha = alpha * 0.7;
@@ -488,7 +592,7 @@ const bassPulse = {
         ctx.strokeStyle = waveCore;
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.arc(ox, oy, w.radius, BASE - w.arc * 0.88, BASE + w.arc * 0.88);
+        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc * 0.88, BASE + w.arc * 0.88);
         ctx.stroke();
       });
 

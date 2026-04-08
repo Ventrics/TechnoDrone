@@ -101,7 +101,7 @@ const burstParticles = {
       ctx.strokeStyle = p.color;
       ctx.lineWidth   = 2;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, Math.max(0.1, p.radius || 0), 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     });
@@ -201,7 +201,7 @@ const impactFX = {
       ctx.globalAlpha = Math.max(0, f.alpha);
       ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 22;
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(f.x, f.y, Math.max(0.1, f.r || 0), 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     });
     this.rings.forEach(r => {
@@ -209,7 +209,7 @@ const impactFX = {
       ctx.globalAlpha = Math.max(0, r.alpha * 0.8);
       ctx.shadowColor = r.color; ctx.shadowBlur = 18;
       ctx.strokeStyle = r.color; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0.1, r.r || 0), 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     });
   },
@@ -252,7 +252,7 @@ const smokeParticles = {
       ctx.save();
       ctx.globalAlpha = Math.max(0, p.alpha * 0.55);
       ctx.fillStyle   = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.r || 0), 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     });
   },

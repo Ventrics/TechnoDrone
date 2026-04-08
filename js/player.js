@@ -24,7 +24,7 @@ const dash = {
       }
     }
 
-    if (justPressed[' '] && this.cooldown <= 0 && this.duration <= 0) {
+    if (tutorialAllowsControl('dash') && justPressed[' '] && this.cooldown <= 0 && this.duration <= 0) {
       const leftHeld  = keys['ArrowLeft']  || keys['a'] || keys['A'];
       const rightHeld = keys['ArrowRight'] || keys['d'] || keys['D'];
 
@@ -74,8 +74,10 @@ const drone = {
     const dt = delta / 1000;
     let dx = 0;
 
-    if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= 1;
-    if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
+    if (tutorialAllowsControl('move')) {
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= 1;
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
+    }
 
     let speedX = dx * this.speed;
 
@@ -530,11 +532,28 @@ const player = {
   overdriveTimer: 0,
   OVERDRIVE_DURATION: 5000,
   overdriveActivationFlash: 0,
+  chain: 0,
+  chainTimer: 0,
 
   ultCharge: 0,
   ULT_MAX: 45,
   ultReady: true,
   ultUses: 3,
+
+  get chainMultiplier() {
+    if (this.chain >= 75) return 5;
+    if (this.chain >= 50) return 4;
+    if (this.chain >= 30) return 3;
+    if (this.chain >= 15) return 2;
+    return 1;
+  },
+
+  get chainWindow() {
+    if (this.chain >= 50) return 1200;
+    if (this.chain >= 30) return 1500;
+    if (this.chain >= 15) return 2000;
+    return 2500;
+  },
 
   get effectiveDamage() {
     let dmg = 1.2 + (stage.current - 1) * 0.45;
@@ -563,6 +582,11 @@ const player = {
 
   hit() {
     if (this.dead || this.invincibleTimer > 0) return;
+
+    const brokenChain = this.chain;
+    this.chain = 0;
+    this.chainTimer = 0;
+    if (brokenChain >= 15) stage.onChainBroken(brokenChain, 'damage');
 
     this.overdriveCharge = 0;
     this.overdriveActive = false;
@@ -607,6 +631,12 @@ const player = {
     if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - delta);
     if (this.dashHeatFlashTimer > 0) this.dashHeatFlashTimer = Math.max(0, this.dashHeatFlashTimer - delta);
     if (this.overdriveActivationFlash > 0) this.overdriveActivationFlash = Math.max(0, this.overdriveActivationFlash - delta);
+    if (this.chainTimer > 0) {
+      this.chainTimer = Math.max(0, this.chainTimer - delta);
+      if (this.chainTimer <= 0) {
+        this.chain = 0;
+      }
+    }
     const nearDeath = this.lives === 1 && !this.dead;
 
     const dt = delta / 1000;
@@ -660,6 +690,10 @@ const player = {
   },
 
   onKill(isElite = false, fromNuke = false) {
+    if (!fromNuke) {
+      this.chain++;
+      this.chainTimer = this.chainWindow;
+    }
     if (!this.overdriveActive) {
       let gain = isElite ? 18 : 4;
       this.overdriveCharge = Math.min(this.OVERDRIVE_MAX, this.overdriveCharge + gain);

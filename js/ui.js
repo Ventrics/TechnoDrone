@@ -1288,6 +1288,13 @@ function drawHUD() {
   const spreadHighlight = '#fff0a8';
   const bassColor = '#a3122a';
   const bassHighlight = '#ff9aad';
+  const getChainColor = chain => {
+    if (chain >= 75) return '#ffffff';
+    if (chain >= 50) return '#ff007f';
+    if (chain >= 30) return '#ffd400';
+    if (chain >= 15) return '#31afd4';
+    return '#2e3bf0';
+  };
   const overdriveFrac = player.overdriveActive
     ? player.overdriveTimer / player.OVERDRIVE_DURATION
     : player.overdriveCharge / player.OVERDRIVE_MAX;
@@ -1295,6 +1302,10 @@ function drawHUD() {
   const heatColor  = heatFrac > 0.75 ? hudHot : heatFrac > 0.45 ? hudPink : hudBlue;
   const heatPulse  = 0.55 + 0.45 * Math.sin(getNow() * 0.012);
   const nukeUsesLeft = player.ultUses;
+  const chainColor = getChainColor(player.chain);
+  const chainFill = player.chain > 0 ? Math.max(0, Math.min(1, player.chainTimer / player.chainWindow)) : 0;
+  const chainBarColor = player.chain > 0 && chainFill < 0.25 ? '#ff3030' : chainColor;
+  const chainDimAlpha = player.chain === 0 && stage.chainBreakFlash <= 0 ? 0.25 : 1;
 
   ctx.save();
   ctx.textAlign = 'left';
@@ -1399,6 +1410,29 @@ function drawHUD() {
   ctx.fillText(String(stage.kills), tx, cy);
   clearGlow();
   cy += 48;
+
+  ctx.save();
+  ctx.globalAlpha = chainDimAlpha;
+  cy = drawHudLabel('CHAIN', tx, cy, '#93a6ff', chainColor, 13, 0.84);
+  ctx.font = `bold ${Math.min(28, Math.max(20, Math.floor(barW * 0.11)))}px monospace`;
+  ctx.fillStyle = chainColor;
+  setGlow(chainColor, 12);
+  ctx.fillText(`x${player.chainMultiplier}`, tx, cy);
+  ctx.textAlign = 'right';
+  ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
+  ctx.fillText(String(player.chain).padStart(3, '0'), tx + barW, cy);
+  if (stage.chainBreakFlash > 0) {
+    ctx.globalAlpha = stage.chainBreakFlash;
+    setGlow('#ff3030', 18);
+    ctx.fillStyle = '#ff3030';
+    ctx.fillText(String(stage.chainBreakCount).padStart(3, '0'), tx + barW, cy);
+  }
+  clearGlow();
+  ctx.textAlign = 'left';
+  cy += 44;
+  cy = drawPremiumBar(tx, cy, barW, chainFill, chainBarColor, 12);
+  ctx.restore();
+  cy += 6;
 
   cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor);
   cy += 6;
@@ -1538,10 +1572,10 @@ const tutorial = {
     { id: 'move', title: 'MOVE - A / D', subtitle: 'SWEEP LEFT AND RIGHT THROUGH BOTH MARKERS', focus: null, accent: COLOR_CYAN, minTime: 2200 },
     { id: 'shoot', title: 'FIRE - HOLD J OR MOUSE', subtitle: 'KILL 5 // STAND STILL TO FIRE FASTER', focus: null, accent: '#ffffff', minTime: 2800 },
     { id: 'heat', title: 'FIRING BUILDS HEAT', subtitle: 'RELEASE FIRE TO COOL BACK DOWN', focus: 'shipArc', accent: '#ff8800', minTime: 2600 },
-    { id: 'dash', title: 'DASH - SPACE + A / D', subtitle: 'DASH THROUGH THE SIDE TARGETS ON YOUR LANE', focus: null, accent: COLOR_CYAN, minTime: 2600 },
-    { id: 'refund', title: 'DASH VENTS HEAT', subtitle: 'BUILD HEAT, THEN DASH TO DUMP IT', focus: 'shipArc', accent: '#9be7ff', minTime: 2200 },
+    { id: 'dash', title: 'DASH - SPACE + A / D', subtitle: 'DASH THROUGH ENEMIES TO DELETE THEM', focus: null, accent: COLOR_CYAN, minTime: 2600 },
+    { id: 'refund', title: 'DASH VENTS HEAT', subtitle: 'BUILD HEAT, THEN DASH TO KILL + DUMP IT', focus: 'shipArc', accent: '#9be7ff', minTime: 2200 },
     { id: 'overdrive', title: 'KILLS FILL OVERDRIVE', subtitle: 'PURPLE STATE = FASTER FIRE, SPEED, NO HEAT', focus: 'overdrive', accent: '#cc44ff', minTime: 2600 },
-    { id: 'damage', title: 'TAKING DAMAGE KILLS OVERDRIVE', subtitle: 'LET ONE SHOT HIT YOU', focus: 'overdrive', accent: '#ff5544', minTime: 3200 },
+    { id: 'damage', title: 'TAKING DAMAGE KILLS OVERDRIVE', subtitle: 'LET THE LASER HIT YOU', focus: 'overdrive', accent: '#ff5544', minTime: 3200 },
     { id: 'spread', title: 'SPREAD SHOT - WIDE CLEAR', subtitle: 'HOLD K OR RIGHT CLICK TO SHRED THE SWARM', focus: null, accent: '#ffcc00', minTime: 2200 },
     { id: 'bass', title: 'BASS PULSE - CLOSE BURST', subtitle: 'HOLD K OR RIGHT CLICK TO BLAST ANYTHING CLOSE', focus: null, accent: '#a3122a', minTime: 2200 },
     { id: 'nuke', title: 'Q - NUKE', subtitle: 'PRESS Q TO WIPE THE SCREEN // ONLY 3 PER RUN', focus: 'nuke', accent: COLOR_PINK, minTime: 2200 },
@@ -1916,6 +1950,9 @@ const tutorial = {
       }
     }
     if (step.id === 'damage' && player.lives >= this.stepState.startLives) {
+      player.overdriveActive = true;
+      player.overdriveTimer = 999999;
+      player.overdriveCharge = Math.max(player.overdriveCharge, 100);
       this.stepState.damageRespawnTimer -= delta;
       if (this.stepState.damageRespawnTimer <= 0 && enemyBullets.pool.length === 0) {
         this._spawnTutorialHitShot();
@@ -2070,9 +2107,9 @@ const tutorial = {
       return;
     }
 
-    const panelW = Math.min(PLAY_W - 72, 700);
+    const panelW = Math.min(PLAY_W - 96, 760);
     const panelX = PLAY_X + (PLAY_W - panelW) / 2;
-    const panelY = PLAY_Y + 58;
+    const panelY = PLAY_Y + PLAY_H * 0.34;
     const hudBlue = '#2e3bf0';
     const hudPurple = '#4216d2';
     const hudPink = '#dd32b3';
@@ -2091,15 +2128,15 @@ const tutorial = {
         : accentColor;
 
     ctx.save();
-    const accentW = Math.min(220, panelW * 0.34);
+    const accentW = Math.min(260, panelW * 0.4);
     const accentX = panelX + (panelW - accentW) / 2;
-    const accentY = panelY + 4;
+    const accentY = panelY - 54;
     ctx.globalAlpha = 0.18 * this.fadeAlpha;
     ctx.strokeStyle = hudBlue;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(panelX + panelW * 0.12, panelY + 72);
-    ctx.lineTo(panelX + panelW * 0.88, panelY + 72);
+    ctx.moveTo(panelX + panelW * 0.16, panelY + 54);
+    ctx.lineTo(panelX + panelW * 0.84, panelY + 54);
     ctx.stroke();
 
     ctx.globalAlpha = 0.14 * this.fadeAlpha;
@@ -2119,21 +2156,16 @@ const tutorial = {
     clearGlow();
 
     ctx.globalAlpha = 0.95 * this.fadeAlpha;
-    this._drawTutorialLines(step.title, PLAY_X + PLAY_W / 2, panelY + 30, panelW - 84, titleColor, titleGlow, 34);
+    this._drawTutorialLines(step.title, PLAY_X + PLAY_W / 2, panelY - 8, panelW - 48, titleColor, titleGlow, 60);
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillStyle = hudLite;
-    setGlow(accentColor, 12);
-    ctx.fillText(step.subtitle, PLAY_X + PLAY_W / 2, panelY + 56);
+    this._drawTutorialLines(step.subtitle, PLAY_X + PLAY_W / 2, panelY + 54, panelW - 88, hudLite, accentColor, 32);
 
-    ctx.font = '12px monospace';
+    ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = hudPink;
     clearGlow();
     setGlow(hudPink, 8);
-    ctx.fillText(`STEP ${this.stepIndex + 1} / ${this.steps.length}`, PLAY_X + PLAY_W / 2, panelY - 10);
+    ctx.fillText(`STEP ${this.stepIndex + 1} / ${this.steps.length}`, PLAY_X + PLAY_W / 2, panelY - 98);
     clearGlow();
     ctx.restore();
   },
@@ -2163,6 +2195,8 @@ function _resetAllState() {
   player.overdriveCharge = 0;
   player.overdriveActive = false;
   player.overdriveTimer = 0;
+  player.chain = 0;
+  player.chainTimer = 0;
   player.heat = 0;
   player.overheated = false;
   player.overheatTimer = 0;
