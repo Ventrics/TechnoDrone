@@ -63,7 +63,7 @@ const drone = {
   rotorAngle: 0,
   tilt: 0,
 
-  get speed() { return player.overdriveActive ? 336 : 280; },
+  get speed() { return player.flowStateActive ? 336 : 280; },
 
   init() {
     this.x = PLAY_X + PLAY_W / 2;
@@ -116,11 +116,11 @@ const drone = {
     const engineDrive  = Math.min(1,
       motionFrac * 1.25 +
       (dashActive ? 0.28 : 0) +
-      (player.overdriveActive ? 0.32 : 0)
+      (player.flowStateActive ? 0.32 : 0)
     );
     const panelColor   = player.overheated ? '#ff6633'
       : nearDeath ? '#ff3300'
-      : player.overdriveActive ? '#d94cff'
+      : player.flowStateActive ? '#d94cff'
       : COLOR_CYAN;
 
     ctx.save();
@@ -130,15 +130,15 @@ const drone = {
     {
       const shipGlow = player.overheated ? '#ff3300'
         : nearDeath ? '#ff3300'
-        : player.overdriveActive ? '#cc44ff'
+        : player.flowStateActive ? '#cc44ff'
         : (dash.duration > 0 ? '#ffffff' : COLOR_CYAN);
       const shipGlowAlpha = player.overheated ? 0.28
         : nearDeath ? 0.24
-        : player.overdriveActive ? 0.26
+        : player.flowStateActive ? 0.26
         : (dash.duration > 0 ? 0.22 : 0.14);
       const shipGlowRadius = player.overheated ? 30
         : nearDeath ? 18 + 6 * Math.abs(Math.sin(now * 0.012))
-        : player.overdriveActive ? 30
+        : player.flowStateActive ? 30
         : (dash.duration > 0 ? 24 : 18);
       ctx.save();
       ctx.globalAlpha = shipGlowAlpha * hullFlicker;
@@ -165,10 +165,10 @@ const drone = {
       ctx.lineTo(ep.x - exhaustLen, ep.y);
       ctx.stroke();
 
-      const exhaustColor = player.overdriveActive ? '#e040fb' : COLOR_CYAN;
-      ctx.globalAlpha = (player.overdriveActive ? 0.28 : 0.18) * ePulse;
+      const exhaustColor = player.flowStateActive ? '#e040fb' : COLOR_CYAN;
+      ctx.globalAlpha = (player.flowStateActive ? 0.28 : 0.18) * ePulse;
       ctx.shadowColor = exhaustColor;
-      ctx.shadowBlur = (player.overdriveActive ? 48 : 32) + engineDrive * 10;
+      ctx.shadowBlur = (player.flowStateActive ? 48 : 32) + engineDrive * 10;
       ctx.fillStyle = exhaustColor;
       ctx.beginPath();
       ctx.ellipse(ep.x - engineDrive * 3, ep.y, 8 + engineDrive * 3, 5 + engineDrive * 2, 0, 0, Math.PI * 2);
@@ -176,9 +176,9 @@ const drone = {
       ctx.restore();
 
       ctx.save();
-      ctx.globalAlpha = (player.overdriveActive ? 0.58 : 0.42) * ePulse;
+      ctx.globalAlpha = (player.flowStateActive ? 0.58 : 0.42) * ePulse;
       ctx.shadowColor = exhaustColor;
-      ctx.shadowBlur = (player.overdriveActive ? 22 : 14) + engineDrive * 8;
+      ctx.shadowBlur = (player.flowStateActive ? 22 : 14) + engineDrive * 8;
       ctx.fillStyle = exhaustColor;
       ctx.beginPath();
       ctx.ellipse(ep.x - engineDrive * 2, ep.y, 4.5 + engineDrive * 1.5, 3.5 + engineDrive, 0, 0, Math.PI * 2);
@@ -267,8 +267,8 @@ const drone = {
     ctx.lineWidth = 0.7;
     ctx.stroke();
 
-    // Overdrive ship ascension — outer magenta bloom layered on hull
-    if (player.overdriveActive) {
+    // Flow State ship ascension — outer magenta bloom layered on hull
+    if (player.flowStateActive) {
       const odPulse = 0.6 + 0.4 * (Math.sin(getNow() * 0.018) * 0.5 + 0.5);
       tracePath();
       ctx.globalAlpha = 0.35 * odPulse * hullFlicker;
@@ -323,10 +323,10 @@ const drone = {
 
     // Heat arc around ship
     {
-      const heatFrac = player.overdriveActive
-        ? Math.max(0, player.overdriveTimer / player.OVERDRIVE_DURATION)
+      const heatFrac = player.flowStateActive
+        ? Math.max(0, player.flowStateTimer / player.FLOW_STATE_DURATION)
         : player.heat / 100;
-      const heatColor = player.overdriveActive ? '#cc44ff'
+      const heatColor = player.flowStateActive ? '#cc44ff'
         : player.overheated ? '#ff0000'
         : heatFrac > 0.8 ? '#ff3300'
         : heatFrac > 0.5 ? '#ff8800'
@@ -364,7 +364,7 @@ const drone = {
 
       // Filled heat arc
       if (heatFrac > 0) {
-        if (player.overdriveActive) {
+        if (player.flowStateActive) {
           ctx.globalAlpha = 0.55 + 0.35 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5);
         } else if (player.overheated) {
           ctx.globalAlpha = 0.35 + 0.65 * (Math.sin(getNow() * 0.015) * 0.5 + 0.5);
@@ -373,7 +373,7 @@ const drone = {
         }
         ctx.strokeStyle = heatColor;
         ctx.shadowColor = heatColor;
-        ctx.shadowBlur = player.overdriveActive ? 16 : 8;
+        ctx.shadowBlur = player.flowStateActive ? 16 : 8;
         ctx.beginPath();
         ctx.arc(0, 0, arcRadius, arcStart, arcStart + arcSpan * heatFrac);
         ctx.stroke();
@@ -386,13 +386,12 @@ const drone = {
 
     let tipColor = COLOR_PINK;
     let tipBase = 18;
-    if (player.overdriveActive || player.altFireType) {
+    if (player.flowStateActive || player.altFireType) {
       const p = Math.sin(now * 0.025) * 0.5 + 0.5;
-      tipColor = player.overdriveActive ? (p > 0.5 ? '#cc44ff' : '#9be7ff')
-        : player.altFireType === 'spread' ? '#ffcc00'
-        : player.altFireType === 'bass' ? '#b14cff'
+      tipColor = player.flowStateActive ? (p > 0.5 ? '#cc44ff' : '#9be7ff')
+        : player.altFireType === 'spread' ? '#39ff14'
         : (p > 0.5 ? '#ff44cc' : '#ffffff');
-      tipBase = player.overdriveActive ? 34 + p * 24 : 26 + p * 20;
+      tipBase = player.flowStateActive ? 34 + p * 24 : 26 + p * 20;
     }
     ctx.globalAlpha = 0.18;
     ctx.shadowColor = tipColor;
@@ -509,9 +508,8 @@ const player = {
   INVINCIBLE_DURATION: 300,
   altFireType: null,
   spreadFuel: 0,
-  SPREAD_MAX_FUEL: 200,
-  bassFuel: 0,
-  BASS_MAX_FUEL: 100,
+  SPREAD_MAX_FUEL: 100,
+
   altFireCooldown: 0,
   ALT_FIRE_COOLDOWN: 5000,
   hitFlashTimer: 0,
@@ -526,12 +524,12 @@ const player = {
   HEAT_DECAY: 30,
   OVERHEAT_LOCKOUT: 1500,
 
-  overdriveCharge: 0,
-  OVERDRIVE_MAX: 100,
-  overdriveActive: false,
-  overdriveTimer: 0,
-  OVERDRIVE_DURATION: 5000,
-  overdriveActivationFlash: 0,
+  flowStateCharge: 0,
+  FLOW_STATE_MAX: 100,
+  flowStateActive: false,
+  flowStateTimer: 0,
+  FLOW_STATE_DURATION: 7500,
+  flowStateActivationFlash: 0,
   chain: 0,
   chainTimer: 0,
 
@@ -557,14 +555,14 @@ const player = {
 
   get effectiveDamage() {
     let dmg = 1.2 + (stage.current - 1) * 0.45;
-    if (this.overdriveActive) dmg *= 1.2;
+    if (this.flowStateActive) dmg *= 1.2;
     return Math.ceil(dmg);
   },
 
   get fireRateCooldown() {
     let cd = 200;
     if (!isPlayerMoving()) cd *= 0.75;
-    if (this.overdriveActive) cd *= 0.85;
+    if (this.flowStateActive) cd *= 0.85;
     return Math.max(70, cd);
   },
 
@@ -573,10 +571,6 @@ const player = {
     this.altFireCooldown = this.ALT_FIRE_COOLDOWN;
     if (type === 'spread') {
       this.spreadFuel = this.SPREAD_MAX_FUEL;
-      this.bassFuel = 0;
-    } else if (type === 'bass') {
-      this.bassFuel = this.BASS_MAX_FUEL;
-      this.spreadFuel = 0;
     }
   },
 
@@ -588,9 +582,9 @@ const player = {
     this.chainTimer = 0;
     if (brokenChain >= 15) stage.onChainBroken(brokenChain, 'damage');
 
-    this.overdriveCharge = 0;
-    this.overdriveActive = false;
-    this.overdriveTimer = 0;
+    this.flowStateCharge = 0;
+    this.flowStateActive = false;
+    this.flowStateTimer = 0;
     this.lives--;
     this.invincibleTimer = this.INVINCIBLE_DURATION;
     this.hitFlashTimer = this.HIT_FLASH_MS;
@@ -630,11 +624,13 @@ const player = {
     if (this.altFireCooldown > 0) this.altFireCooldown = Math.max(0, this.altFireCooldown - delta);
     if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - delta);
     if (this.dashHeatFlashTimer > 0) this.dashHeatFlashTimer = Math.max(0, this.dashHeatFlashTimer - delta);
-    if (this.overdriveActivationFlash > 0) this.overdriveActivationFlash = Math.max(0, this.overdriveActivationFlash - delta);
+    if (this.flowStateActivationFlash > 0) this.flowStateActivationFlash = Math.max(0, this.flowStateActivationFlash - delta);
     if (this.chainTimer > 0) {
       this.chainTimer = Math.max(0, this.chainTimer - delta);
       if (this.chainTimer <= 0) {
+        const brokenChain = this.chain;
         this.chain = 0;
+        if (brokenChain >= 15) stage.onChainBroken(brokenChain, 'timeout');
       }
     }
     const nearDeath = this.lives === 1 && !this.dead;
@@ -648,9 +644,8 @@ const player = {
         this.heat = 0;
       }
     } else {
-      const bassFiring = this.altFireType === 'bass' && this.bassFuel > 0 && (keys['k'] || keys['K']);
-      if (!isFireHeld() && !bassFiring) {
-        this.heat = Math.max(0, this.heat - this.HEAT_DECAY * (this.overdriveActive ? 3 : 1) * dt);
+      if (!isFireHeld()) {
+        this.heat = Math.max(0, this.heat - this.HEAT_DECAY * (this.flowStateActive ? 3 : 1) * dt);
       }
       if (this.heat >= 100) {
         this.overheated = true;
@@ -667,25 +662,22 @@ const player = {
       this.spreadFuel = 0;
       this.altFireType = null;
     }
-    if (this.altFireType === 'bass' && this.bassFuel <= 0) {
-      this.bassFuel = 0;
-      this.altFireType = null;
-    }
 
-    if (this.overdriveActive) {
-      this.overdriveTimer -= delta;
-      if (this.overdriveTimer <= 0) {
-        this.overdriveActive = false;
-        this.overdriveTimer = 0;
-        audio.play('overdriveEnd');
+
+    if (this.flowStateActive) {
+      this.flowStateTimer -= delta;
+      if (this.flowStateTimer <= 0) {
+        this.flowStateActive = false;
+        this.flowStateTimer = 0;
+        audio.play('flowStateEnd');
       }
-    } else if (this.overdriveCharge >= this.OVERDRIVE_MAX) {
-      this.overdriveActive = true;
-      this.overdriveTimer = this.OVERDRIVE_DURATION;
-      this.overdriveCharge = 0;
-      this.overdriveActivationFlash = 420;
-      audio.play('overdriveActivate');
-      streakCallout.showOverdrive();
+    } else if (this.flowStateCharge >= this.FLOW_STATE_MAX) {
+      this.flowStateActive = true;
+      this.flowStateTimer = this.FLOW_STATE_DURATION;
+      this.flowStateCharge = 0;
+      this.flowStateActivationFlash = 420;
+      audio.play('flowStateActivate');
+      streakCallout.showFlowState();
     }
   },
 
@@ -694,9 +686,11 @@ const player = {
       this.chain++;
       this.chainTimer = this.chainWindow;
     }
-    if (!this.overdriveActive) {
-      let gain = isElite ? 18 : 4;
-      this.overdriveCharge = Math.min(this.OVERDRIVE_MAX, this.overdriveCharge + gain);
+    if (!this.flowStateActive) {
+      const s = stage.current;
+      const stageScale = s <= 2 ? 0.5 : s <= 4 ? 0.75 : 1.0;
+      const gain = Math.round((isElite ? 18 : 4) * stageScale);
+      this.flowStateCharge = Math.min(this.FLOW_STATE_MAX, this.flowStateCharge + gain);
     }
 
   }

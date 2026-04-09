@@ -54,31 +54,68 @@ function drawLbBg() {
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
 
-  ctx.fillStyle = '#050505';
+  ctx.fillStyle = '#04050a';
   ctx.fillRect(0, 0, W, H);
 
-  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
-  grad.addColorStop(0,   'rgba(0,79,255,0.07)');
-  grad.addColorStop(0.5, 'rgba(49,175,212,0.03)');
-  grad.addColorStop(1,   'rgba(0,0,0,0)');
-  ctx.fillStyle = grad;
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#06040d');
+  sky.addColorStop(0.28, '#110820');
+  sky.addColorStop(0.6, '#180b2c');
+  sky.addColorStop(1, '#04050a');
+  ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
 
-  const G   = 64;
-  const off = titleGridOff % G;
+  const topGlow = ctx.createRadialGradient(cx, H * 0.18, 0, cx, H * 0.18, Math.max(W, H) * 0.5);
+  topGlow.addColorStop(0, 'rgba(139,92,246,0.14)');
+  topGlow.addColorStop(0.45, 'rgba(46,59,240,0.08)');
+  topGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = topGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  const horizonY = H * 0.72;
+  const gridDrift = (titleGridOff * 0.016) % 1;
   ctx.save();
-  ctx.lineWidth   = 0.6;
-  ctx.globalAlpha = 0.09;
-  setGlow(COLOR_CYAN, 4);
-  ctx.strokeStyle = COLOR_CYAN;
-  for (let x = -G + off; x < W + G; x += G) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(0, horizonY - 6, W, H - horizonY + 6);
+  ctx.clip();
+  ctx.globalAlpha = 0.82;
+  ctx.strokeStyle = 'rgba(49,175,212,0.22)';
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < 11; i++) {
+    const t = (i / 10 + gridDrift) % 1;
+    const y = horizonY + Math.pow(t, 1.8) * (H - horizonY + 80);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
   }
-  for (let y = -G + off; y < H + G; y += G) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+
+  const vanishingX = cx;
+  const bottomSpread = W * 0.58;
+  for (let i = -7; i <= 7; i++) {
+    const x = cx + i * (bottomSpread / 7);
+    ctx.beginPath();
+    ctx.moveTo(x, H + 40);
+    ctx.lineTo(vanishingX + i * 12, horizonY);
+    ctx.stroke();
   }
-  clearGlow();
   ctx.restore();
+
+  const horizonGlow = ctx.createLinearGradient(0, horizonY - 16, 0, horizonY + 24);
+  horizonGlow.addColorStop(0, 'rgba(0,0,0,0)');
+  horizonGlow.addColorStop(0.42, 'rgba(49,175,212,0.08)');
+  horizonGlow.addColorStop(0.68, 'rgba(139,92,246,0.10)');
+  horizonGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = horizonGlow;
+  ctx.fillRect(0, horizonY - 16, W, 40);
+
+  const vignette = ctx.createRadialGradient(cx, cy * 0.86, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.78);
+  vignette.addColorStop(0, 'rgba(46,59,240,0.04)');
+  vignette.addColorStop(0.45, 'rgba(12,8,24,0.12)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
 
   lbOrbs.forEach(o => {
     const ox = cx + Math.cos(o.angle) * o.radius * (W / 1200);
@@ -109,38 +146,6 @@ function drawLbBg() {
     ctx.restore();
   });
 
-  lbShooting.forEach(s => {
-    if (s.alpha <= 0) return;
-    const sx = (s.x / 1920) * W;
-    const sy = (s.y / 1080) * H;
-    const mag = Math.hypot(s.vx, s.vy);
-    const nx  = s.vx / mag, ny = s.vy / mag;
-    const tailScale = W / 1920;
-    ctx.save();
-    ctx.globalAlpha = s.alpha * 0.9;
-    const sg = ctx.createLinearGradient(
-      sx - nx * s.len * tailScale, sy - ny * s.len * tailScale,
-      sx, sy
-    );
-    sg.addColorStop(0, s.color + '00');
-    sg.addColorStop(1, s.color);
-    setGlow(s.color, 14);
-    ctx.strokeStyle = sg;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(sx - nx * s.len * tailScale, sy - ny * s.len * tailScale);
-    ctx.lineTo(sx, sy);
-    ctx.stroke();
-    ctx.globalAlpha = s.alpha;
-    ctx.fillStyle = '#ffffff';
-    setGlow(s.color, 20);
-    ctx.beginPath();
-    ctx.arc(sx, sy, 2, 0, Math.PI * 2);
-    ctx.fill();
-    clearGlow();
-    ctx.restore();
-  });
 }
 
 const leaderboard = {
@@ -289,20 +294,15 @@ const leaderboard = {
     const now = getNow();
     const cy = H / 2;
     const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(W / 1280, H / 720)));
-    const compact = W < 920;
     const headingY = cy - 250 * layoutScale;
-    const subLabelY = headingY + 68 * layoutScale;
-    const dividerY = subLabelY + 34 * layoutScale;
-    const startY = dividerY + 40 * layoutScale;
-    const rowHeight = compact ? 26 : 30;
-    const dividerWidth = Math.min(W * 0.58, 520 * layoutScale);
-    const leftX = cx - Math.min(300 * layoutScale, W * 0.24);
-    const nameX = cx - Math.min(210 * layoutScale, W * 0.165);
-    const scoreX = cx + Math.min(180 * layoutScale, W * 0.16);
-    const killsX = cx + Math.min(300 * layoutScale, W * 0.24);
+    const topBlockY = headingY + 110 * layoutScale;
+    const topCardY = topBlockY + 26 * layoutScale;
+    const lowerListY = topCardY + 168 * layoutScale;
+    const compact = W < 920;
     const headerFont = Math.round(Math.max(56, Math.min(88, 88 * layoutScale)));
     const labelFont = Math.round(Math.max(11, Math.min(13, 13 * layoutScale)));
     const rowFont = Math.round(Math.max(15, Math.min(18, 18 * layoutScale)));
+    const localName = loadPlayerName();
 
     drawLbBg();
 
@@ -313,7 +313,7 @@ const leaderboard = {
     const headingLetters = heading.split('');
     const flicker = 0.9 + 0.1 * Math.sin(now * 0.014) * Math.sin(now * 0.029);
     const glitchPulse = 0.5 + 0.5 * Math.sin(now * 0.013);
-    ctx.font = `bold ${headerFont}px monospace`;
+    ctx.font = `${headerFont}px "anatol-mn", sans-serif`;
     const spacing = Math.max(4, headerFont * 0.04);
     const widths = headingLetters.map(ch => ch === ' ' ? headerFont * 0.42 : ctx.measureText(ch).width);
     const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (headingLetters.length - 1);
@@ -333,42 +333,18 @@ const leaderboard = {
       });
     };
     drawHeadingLayer(0.04, 86, '#4216d2', '#4216d2', 0.12);
-    drawHeadingLayer(0.14, 42, '#dd32b3', '#fb29fd', 0.18);
-    drawHeadingLayer(0.56, 20, '#2e3bf0', '#2e3bf0', 0.22);
-    drawHeadingLayer(1.0, 8, '#d9d4ff', '#2e3bf0', 0.28);
+    drawHeadingLayer(0.12, 42, '#dd32b3', '#fb29fd', 0.18);
+    drawHeadingLayer(0.34, 18, '#ffffff', '#31afd4', 0.22);
+    drawHeadingLayer(1.0, 8, '#ffffff', '#ffffff', 0.28);
     ctx.shadowBlur = 0;
     ctx.shadowColor = 'transparent';
 
-    ctx.globalAlpha = 0.72;
-    ctx.fillStyle = '#d9d4ff';
-    ctx.font = `bold ${labelFont}px monospace`;
-    ctx.fillText('GLOBAL SIGNAL // TOP PILOTS', cx, subLabelY);
-
-    ctx.globalAlpha = 0.16;
-    ctx.strokeStyle = '#2e3bf0';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(cx - dividerWidth / 2, dividerY);
-    ctx.lineTo(cx + dividerWidth / 2, dividerY);
-    ctx.stroke();
-
-    ctx.globalAlpha = 0.42;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#dd32b3';
-    ctx.font = `bold ${labelFont}px monospace`;
-    ctx.fillText('RANK', leftX, startY);
-    ctx.fillText('CALLSIGN', nameX, startY);
-    ctx.textAlign = 'right';
-    ctx.fillText('SCORE', scoreX, startY);
-    ctx.fillText('KILLS', killsX, startY);
-    clearGlow();
-
     if (this.loading) {
       const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
-      setGlow('#2e3bf0', 20);
+      setGlow('#31afd4', 20);
       ctx.globalAlpha = 0.5 + pulse * 0.5;
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#d9d4ff';
+      ctx.fillStyle = '#ffffff';
       ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px monospace`;
       ctx.fillText('FETCHING DATA...', cx, H * 0.49);
     } else if (this.error) {
@@ -378,69 +354,93 @@ const leaderboard = {
       ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px monospace`;
       ctx.fillText('CONNECTION FAILED', cx, H * 0.49);
     } else {
-      const localName = loadPlayerName();
       const timeSinceLoad = now - (this.loadTime || now);
-      ctx.font = `bold ${rowFont}px monospace`;
+      const leader = this.scores[0];
+      const rest = this.scores.slice(1, 10);
 
-      this.scores.forEach((entry, i) => {
-        const delay = i * 20;
+      if (leader) {
+        const delay = 0;
         const animTime = Math.max(0, timeSinceLoad - delay);
         const animDuration = 400;
         let progress = animTime / animDuration;
         if (progress > 1) progress = 1;
-
         const easeProgress = 1 - Math.pow(1 - progress, 4);
-        if (easeProgress <= 0) return;
-
-        const y = startY + 26 + i * rowHeight;
-        const isMe = entry.player_name === localName;
-        const xOffset = (1 - easeProgress) * 50;
+        if (easeProgress > 0) {
+        const x = cx;
+        const y = topCardY + 10 * layoutScale;
+        const xOffset = (1 - easeProgress) * 36;
         const currentAlpha = easeProgress;
+        const accent = '#ffd15c';
+        const glow = '#31afd4';
 
         ctx.save();
         ctx.translate(xOffset, 0);
         ctx.globalAlpha = currentAlpha;
 
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        if (i === 0) {
-          const pulse = 0.5 + 0.5 * Math.sin(now * 0.005);
-          setGlow('#fb29fd', 12 + pulse * 15);
-          ctx.fillStyle = '#fb29fd';
-        } else if (isMe) {
-          setGlow('#dd32b3', 15);
-          ctx.fillStyle = '#dd32b3';
-        } else if (i === 1) {
-          setGlow('#d9d4ff', 10);
-          ctx.fillStyle = '#d9d4ff';
-        } else if (i === 2) {
-          setGlow('#2e3bf0', 8);
-          ctx.fillStyle = '#2e3bf0';
-        } else {
-          setGlow(i % 2 === 0 ? '#2e3bf0' : '#4216d2', 8);
-          ctx.fillStyle = '#d9d4ff';
-        }
-
-        const textY = y - 2 + rowHeight / 2;
-        if (isMe) {
-          ctx.globalAlpha = currentAlpha * 0.14;
-          ctx.strokeStyle = '#dd32b3';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(leftX - 8, textY + rowHeight * 0.45);
-          ctx.lineTo(killsX + 8, textY + rowHeight * 0.45);
-          ctx.stroke();
-          ctx.globalAlpha = currentAlpha;
-        }
-        ctx.fillText((i + 1) + '.', leftX, textY);
-        ctx.fillText(entry.player_name, nameX, textY);
-        ctx.textAlign = 'right';
-        ctx.fillText(entry.score, scoreX, textY);
-        ctx.fillText(entry.kills, killsX, textY);
+        setGlow('#ffe86a', 24);
+        ctx.fillStyle = '#fff27d';
+        ctx.font = `bold ${Math.round(Math.max(22, 54 * layoutScale))}px monospace`;
+        ctx.fillText(`#1 ${leader.player_name}`, x, y - 2 * layoutScale);
+        ctx.font = `bold ${Math.round(Math.max(13, 15 * layoutScale))}px monospace`;
+        ctx.globalAlpha = currentAlpha * 0.82;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`${leader.score} SCORE`, x, y + 36 * layoutScale);
+        ctx.globalAlpha = currentAlpha * 0.62;
+        ctx.fillText(`${leader.kills} KILLS`, x, y + 58 * layoutScale);
         clearGlow();
         ctx.restore();
-      });
+        }
+      }
+
+      if (rest.length > 0) {
+        ctx.globalAlpha = 0.85;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.round(labelFont * 1.2)}px monospace`;
+        ctx.fillText('RANKINGS', cx, lowerListY - 26 * layoutScale);
+
+        const listW = Math.min(620 * layoutScale, W * 0.7);
+        const rowH = compact ? 28 : 32;
+        const listLeft = cx - listW / 2;
+        const rankX = listLeft + 16;
+        const nameX = listLeft + 72;
+        const scoreX = listLeft + listW - 104;
+        const killsX = listLeft + listW - 16;
+
+        rest.forEach((entry, idx) => {
+          const i = idx + 1;
+          const delay = i * 20;
+          const animTime = Math.max(0, timeSinceLoad - delay);
+          const animDuration = 420;
+          let progress = animTime / animDuration;
+          if (progress > 1) progress = 1;
+          const easeProgress = 1 - Math.pow(1 - progress, 4);
+          if (easeProgress <= 0) return;
+
+          const y = lowerListY + idx * rowH;
+          const isMe = entry.player_name === localName;
+          const xOffset = (1 - easeProgress) * 30;
+
+          ctx.save();
+          ctx.translate(xOffset, 0);
+          ctx.globalAlpha = easeProgress;
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'left';
+
+          setGlow(isMe ? '#fb29fd' : '#31afd4', isMe ? 10 : 6);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `bold ${rowFont}px monospace`;
+          ctx.fillText(`#${i + 1}`, rankX, y);
+          ctx.fillText(entry.player_name, nameX, y);
+          ctx.textAlign = 'right';
+          ctx.fillText(entry.score, scoreX, y);
+          ctx.fillText(entry.kills, killsX, y);
+          clearGlow();
+          ctx.restore();
+        });
+      }
     }
 
     clearGlow();
@@ -453,16 +453,16 @@ const leaderboard = {
 
     ctx.textBaseline = 'bottom';
     ctx.globalAlpha = pulse2;
-    setGlow('#2e3bf0', 10);
-    ctx.fillStyle = '#d9d4ff';
+    setGlow('#31afd4', 10);
+    ctx.fillStyle = '#ffffff';
     ctx.font = `bold ${footerHintSize}px monospace`;
     ctx.fillText('[ ESC OR BACKSPACE TO RETURN ]', cx, footerHintY);
 
     if (this.submitMessage) {
       ctx.textBaseline = 'middle';
       ctx.globalAlpha = 0.92;
-      setGlow(this.submitOk ? '#2e3bf0' : '#ff5544', 12);
-      ctx.fillStyle = this.submitOk ? '#d9d4ff' : '#ff8a80';
+      setGlow(this.submitOk ? '#31afd4' : '#ff5544', 12);
+      ctx.fillStyle = this.submitOk ? '#ffffff' : '#ffb8b0';
       ctx.font = `bold ${footerStatusSize}px monospace`;
       ctx.fillText(this.submitMessage, cx, footerStatusY);
     }
@@ -604,11 +604,9 @@ function drawTitleScreen() {
   const cx = W / 2, cy = H / 2;
   const now = getNow();
   const layout = getTitleScreenLayout();
-  const { headingY, startRunY, tutorialY, leaderboardY, dividerY, statsY, statXs, stageNodesY, layoutScale, compact, dividerWidth } = layout;
+  const { headingY, startRunY, tutorialY, leaderboardY, statsY, stageNodesY, layoutScale, compact } = layout;
   const flicker = 0.9 + 0.1 * Math.sin(now * 0.014) * Math.sin(now * 0.029);
   const menuPulse = 0.6 + 0.4 * Math.sin(now * 0.0032);
-  const barProg  = Math.min(1, (now - titleSelectionChangedAt) / 220);
-  const barEase  = 1 - Math.pow(1 - barProg, 3);
   const headingFontSize = Math.round(Math.max(74, Math.min(126, 126 * layoutScale)));
   const actionFontSize = Math.round(Math.max(28, Math.min(42, 42 * layoutScale)));
   const statValueFontSize = Math.round(Math.max(20, Math.min(28, 28 * layoutScale)));
@@ -619,16 +617,82 @@ function drawTitleScreen() {
   waveField.draw();
   starField.draw();
 
-  const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.76);
-  vignette.addColorStop(0, 'rgba(99,60,180,0.06)');
-  vignette.addColorStop(0.45, 'rgba(16,8,28,0.08)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.72)');
+  const backdrop = ctx.createLinearGradient(0, 0, 0, H);
+  backdrop.addColorStop(0, '#05040b');
+  backdrop.addColorStop(0.28, '#13081f');
+  backdrop.addColorStop(0.62, '#1f0c31');
+  backdrop.addColorStop(1, '#05040b');
+  ctx.fillStyle = backdrop;
+  ctx.fillRect(0, 0, W, H);
+
+  const topGlow = ctx.createRadialGradient(cx, H * 0.2, 0, cx, H * 0.2, Math.max(W, H) * 0.54);
+  topGlow.addColorStop(0, 'rgba(251,41,253,0.16)');
+  topGlow.addColorStop(0.42, 'rgba(139,92,246,0.09)');
+  topGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = topGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  const sideGlowLeft = ctx.createRadialGradient(W * 0.18, H * 0.58, 0, W * 0.18, H * 0.58, Math.max(W, H) * 0.34);
+  sideGlowLeft.addColorStop(0, 'rgba(66,22,210,0.16)');
+  sideGlowLeft.addColorStop(1, 'rgba(66,22,210,0)');
+  ctx.fillStyle = sideGlowLeft;
+  ctx.fillRect(0, 0, W, H);
+
+  const sideGlowRight = ctx.createRadialGradient(W * 0.82, H * 0.52, 0, W * 0.82, H * 0.52, Math.max(W, H) * 0.34);
+  sideGlowRight.addColorStop(0, 'rgba(221,50,179,0.13)');
+  sideGlowRight.addColorStop(1, 'rgba(221,50,179,0)');
+  ctx.fillStyle = sideGlowRight;
+  ctx.fillRect(0, 0, W, H);
+
+  const horizonY = H * 0.76;
+  const gridColor = 'rgba(125,98,255,0.22)';
+  const gridDrift = (now * 0.00008) % 1;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, horizonY - 6, W, H - horizonY + 6);
+  ctx.clip();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < 11; i++) {
+    const t = (i / 10 + gridDrift) % 1;
+    const y = horizonY + Math.pow(t, 1.8) * (H - horizonY + 80);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  const vanishingX = cx;
+  const bottomSpread = W * 0.56;
+  for (let i = -7; i <= 7; i++) {
+    const x = cx + i * (bottomSpread / 7);
+    ctx.beginPath();
+    ctx.moveTo(x, H + 40);
+    ctx.lineTo(vanishingX + i * 10, horizonY);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const horizonGlow = ctx.createLinearGradient(0, horizonY - 18, 0, horizonY + 24);
+  horizonGlow.addColorStop(0, 'rgba(0,0,0,0)');
+  horizonGlow.addColorStop(0.45, 'rgba(129,140,248,0.16)');
+  horizonGlow.addColorStop(0.6, 'rgba(221,50,179,0.18)');
+  horizonGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = horizonGlow;
+  ctx.fillRect(0, horizonY - 18, W, 42);
+
+  const vignette = ctx.createRadialGradient(cx, cy * 0.88, Math.min(W, H) * 0.16, cx, cy, Math.max(W, H) * 0.8);
+  vignette.addColorStop(0, 'rgba(99,60,180,0.04)');
+  vignette.addColorStop(0.45, 'rgba(16,8,28,0.12)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.82)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
   ctx.save();
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = '#818cf8';
+  ctx.globalAlpha = 0.05;
+  ctx.fillStyle = '#c4b5fd';
   for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
   ctx.restore();
 
@@ -682,20 +746,29 @@ function drawTitleScreen() {
     const isSelected = titleSelection === idx;
     const isHovered = isTitleOptionHovered(idx);
     const isActive = isSelected || isHovered;
-    ctx.globalAlpha = isActive ? (0.18 + menuPulse * 0.06) : 0.05;
-    ctx.fillStyle = 'rgba(139,92,246,0.10)';
-    const glowWidth = getTitleOptionWidth(option.label, actionFontSize) + 48 * layoutScale;
-    ctx.fillRect(cx - glowWidth / 2, option.y - 22 * layoutScale, glowWidth, 44 * layoutScale);
+    const glowWidth = getTitleOptionWidth(option.label, actionFontSize) + 96 * layoutScale;
+    const chipH = 50 * layoutScale;
+    if (isActive) {
+      const chipGrad = ctx.createLinearGradient(cx - glowWidth / 2, option.y, cx + glowWidth / 2, option.y);
+      chipGrad.addColorStop(0, 'rgba(66,22,210,0.10)');
+      chipGrad.addColorStop(0.5, 'rgba(221,50,179,0.14)');
+      chipGrad.addColorStop(1, 'rgba(46,59,240,0.10)');
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = chipGrad;
+      ctx.fillRect(cx - glowWidth / 2, option.y - chipH / 2, glowWidth, chipH);
+
+      ctx.globalAlpha = 0.36 + menuPulse * 0.12;
+      ctx.fillStyle = '#fb29fd';
+      ctx.fillRect(cx - glowWidth / 2, option.y - chipH / 2, 3, chipH);
+      ctx.fillRect(cx + glowWidth / 2 - 3, option.y - chipH / 2, 3, chipH);
+
+      ctx.globalAlpha = 0.18 + menuPulse * 0.08;
+      ctx.strokeStyle = '#8b5cf6';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx - glowWidth / 2, option.y - chipH / 2, glowWidth, chipH);
+    }
     drawTitleActionText(option.label, option.y, actionFontSize, isActive);
   });
-
-  ctx.globalAlpha = 0.18;
-  ctx.strokeStyle = '#818cf8';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cx - dividerWidth / 2, dividerY);
-  ctx.lineTo(cx + dividerWidth / 2, dividerY);
-  ctx.stroke();
 
   const stats = [
     { label: 'BEST SCORE', value: `${save.highScore}`, color: '#a5b4fc' }
@@ -735,14 +808,14 @@ function drawTitleActionText(label, y, fontSize, isActive) {
   ctx.font = `bold ${fontSize}px monospace`;
 
   if (isActive) {
-    ctx.globalAlpha = 0.24;
-    setGlow('#8b5cf6', 28);
-    ctx.fillStyle = '#8b5cf6';
+    ctx.globalAlpha = 0.18;
+    setGlow('#dd32b3', 30);
+    ctx.fillStyle = '#dd32b3';
     ctx.fillText(label, canvas.width / 2, y);
   }
 
   ctx.globalAlpha = 1;
-  setGlow(isActive ? '#8b5cf6' : 'transparent', isActive ? 12 : 0);
+  setGlow(isActive ? '#8b5cf6' : 'transparent', isActive ? 14 : 0);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(label, canvas.width / 2, y);
   clearGlow();
@@ -773,25 +846,21 @@ function getTitleScreenLayout() {
   const cx = W / 2, cy = H / 2;
   const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(W / 1280, H / 720)));
   const compact = W < 920;
-  const headingY = cy - 122 * layoutScale;
-  const startRunY = cy + 18 * layoutScale;
-  const tutorialY = startRunY + 34 * layoutScale;
-  const leaderboardY = tutorialY + 34 * layoutScale;
-  const dividerY = leaderboardY + 34 * layoutScale;
-  const statsY = dividerY + 42 * layoutScale;
-  const dividerWidth = Math.min(W * 0.52, 320 * layoutScale);
+  const headingY = cy - 152 * layoutScale;
+  const startRunY = cy - 6 * layoutScale;
+  const tutorialY = startRunY + 46 * layoutScale;
+  const leaderboardY = tutorialY + 46 * layoutScale;
+  const statsY = leaderboardY + 82 * layoutScale;
   const statGap = compact ? Math.min(180 * layoutScale, W * 0.34) : Math.min(220 * layoutScale, W * 0.28);
   const statXs = [cx - statGap / 2, cx + statGap / 2];
-  const stageNodesY = statsY + 76 * layoutScale;
+  const stageNodesY = statsY + 88 * layoutScale;
 
   return {
     headingY,
     startRunY,
     tutorialY,
     leaderboardY,
-    dividerY,
     statsY,
-    dividerWidth,
     statXs,
     stageNodesY,
     layoutScale,
@@ -1105,12 +1174,162 @@ function drawDeathScreen() {
 }
 
 function drawWinScreen() {
-  drawEndScreen(
-    'MISSION COMPLETE',
-    COLOR_CYAN,
-    'ALL 10 STAGES CLEARED',
-    '[ R - PLAY AGAIN ]'
-  );
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const now = getNow();
+  const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(W / 1280, H / 720)));
+  const headingY = cy - 150 * layoutScale;
+  const subtitleY = cy - 88 * layoutScale;
+  const scoreLabelY = cy - 8 * layoutScale;
+  const scoreY = cy + 48 * layoutScale;
+  const killsLabelY = cy + 118 * layoutScale;
+  const killsY = cy + 164 * layoutScale;
+  const controlsY = cy + 258 * layoutScale;
+  const pulse = 0.62 + 0.38 * Math.sin(now * 0.004);
+  const heroColor = '#d9d4ff';
+  const heroGlow = '#8b5cf6';
+  const accent = '#fb29fd';
+  const accentBlue = '#31afd4';
+  const headingFontSize = Math.round(Math.max(70, Math.min(118, 118 * layoutScale)));
+  const scoreFontSize = Math.round(Math.max(72, Math.min(118, 118 * layoutScale)));
+  const killsFontSize = Math.round(Math.max(42, Math.min(68, 68 * layoutScale)));
+  const controlFontSize = Math.round(Math.max(12, Math.min(14, 14 * layoutScale)));
+  const selectPulse = 0.65 + 0.35 * Math.sin(now * 0.005);
+  const selectProg = Math.min(1, (now - endScreenSelectionChangedAt) / 180);
+  const selectEase = 1 - Math.pow(1 - selectProg, 3);
+
+  ctx.save();
+  ctx.fillStyle = '#020204';
+  ctx.fillRect(0, 0, W, H);
+  starField.draw();
+
+  const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.8);
+  vignette.addColorStop(0, 'rgba(139,92,246,0.06)');
+  vignette.addColorStop(0.38, 'rgba(10,6,24,0.06)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = accentBlue;
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = accentBlue;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  ctx.clip();
+  drone.draw();
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const heading = 'MISSION COMPLETE';
+  ctx.font = `${headingFontSize}px "anatol-mn", sans-serif`;
+  const letters = heading.split('');
+  const spacing = Math.max(4, headingFontSize * 0.04);
+  const widths = letters.map(ch => ch === ' ' ? headingFontSize * 0.42 : ctx.measureText(ch).width);
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (letters.length - 1);
+  const drawLayer = (alphaBase, blur, fill, glowColor) => {
+    let drawX = cx - totalWidth / 2;
+    ctx.fillStyle = fill;
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = blur;
+    letters.forEach((ch, i) => {
+      const charWidth = widths[i];
+      const charCenter = drawX + charWidth / 2;
+      const noise = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(now * 0.018 + i * 0.8));
+      ctx.globalAlpha = alphaBase * noise;
+      ctx.fillText(ch, charCenter, headingY);
+      drawX += charWidth + spacing;
+    });
+  };
+
+  drawLayer(0.08, 56, accent, heroGlow);
+  drawLayer(0.24, 30, heroGlow, heroGlow);
+  drawLayer(1.0, 10, heroColor, accentBlue);
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+
+  ctx.globalAlpha = 0.9;
+  ctx.font = `${Math.round(Math.max(14, 16 * layoutScale))}px monospace`;
+  setGlow(accentBlue, 12);
+  ctx.fillStyle = '#e6f7ff';
+  ctx.fillText('ALL 10 STAGES CLEARED', cx, subtitleY);
+  clearGlow();
+
+  ctx.globalAlpha = 0.6;
+  ctx.font = `${Math.round(Math.max(12, 13 * layoutScale))}px monospace`;
+  ctx.fillStyle = accentBlue;
+  ctx.fillText('FINAL SCORE', cx, scoreLabelY);
+
+  ctx.globalAlpha = pulse;
+  setGlow(heroGlow, 22);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${scoreFontSize}px monospace`;
+  ctx.fillText(player.score.toLocaleString(), cx, scoreY);
+  clearGlow();
+
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(cx - Math.min(W * 0.18, 180), cy + 84 * layoutScale, Math.min(W * 0.36, 360), 1);
+
+  ctx.globalAlpha = 0.6;
+  ctx.font = `${Math.round(Math.max(12, 13 * layoutScale))}px monospace`;
+  ctx.fillStyle = accent;
+  ctx.fillText('KILLS', cx, killsLabelY);
+
+  ctx.globalAlpha = 0.96;
+  setGlow(accent, 16);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${killsFontSize}px monospace`;
+  ctx.fillText(stage.totalKills.toLocaleString(), cx, killsY);
+  clearGlow();
+
+  ctx.font = `bold ${controlFontSize}px monospace`;
+  const options = [
+    { label: '[ R - PLAY AGAIN ]', y: controlsY, activeGlow: accent, activeFill: '#ffffff', idleFill: '#8f8f8f' },
+    { label: '[ M - MAIN MENU ]', y: controlsY + 30 * layoutScale, activeGlow: '#bbbbbb', activeFill: '#d7d7d7', idleFill: '#7a7a7a' }
+  ];
+
+  options.forEach((option, idx) => {
+    const isSelected = endScreenSelection === idx;
+    const tw = ctx.measureText(option.label).width;
+    if (isSelected) {
+      const cardW = tw + 36 * layoutScale;
+      const cardH = 24 * layoutScale;
+      const cardX = cx - cardW / 2;
+      const cardY = option.y - cardH / 2;
+      ctx.globalAlpha = 0.2 * selectEase;
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(cardX, cardY, cardW, cardH);
+    }
+
+    ctx.globalAlpha = isSelected ? (pulse * 0.85 + 0.1) : 0.3;
+    setGlow(isSelected ? option.activeGlow : 'transparent', isSelected ? 12 : 0);
+    ctx.fillStyle = isSelected ? option.activeFill : option.idleFill;
+    ctx.fillText(option.label, cx, option.y);
+    if (isSelected) {
+      const bracketOffset = tw / 2 + 20 * layoutScale;
+      const slide = (1 - selectEase) * 12;
+      ctx.globalAlpha = 0.6 + selectPulse * 0.4;
+      ctx.fillStyle = option.activeFill;
+      setGlow(option.activeGlow, 14);
+      ctx.fillText('[', cx - bracketOffset + slide, option.y);
+      ctx.fillText(']', cx + bracketOffset - slide, option.y);
+    }
+    clearGlow();
+  });
+
+  ctx.restore();
 }
 
 let paused       = false;
@@ -1284,20 +1503,19 @@ function drawHUD() {
   const nukeColor  = hudPink;
   const nukeReadyColor = hudHot;
   const nukeLabelColor = '#f08fe0';
-  const spreadColor = '#ffd400';
-  const spreadHighlight = '#fff0a8';
-  const bassColor = '#a3122a';
-  const bassHighlight = '#ff9aad';
+  const spreadColor = '#39ff14';
+  const spreadHighlight = '#c8ffc8';
+
   const getChainColor = chain => {
     if (chain >= 75) return '#ffffff';
-    if (chain >= 50) return '#ff007f';
-    if (chain >= 30) return '#ffd400';
+    if (chain >= 50) return '#ff33cc';
+    if (chain >= 30) return '#aa88ff';
     if (chain >= 15) return '#31afd4';
     return '#2e3bf0';
   };
-  const overdriveFrac = player.overdriveActive
-    ? player.overdriveTimer / player.OVERDRIVE_DURATION
-    : player.overdriveCharge / player.OVERDRIVE_MAX;
+  const flowStateFrac = player.flowStateActive
+    ? player.flowStateTimer / player.FLOW_STATE_DURATION
+    : player.flowStateCharge / player.FLOW_STATE_MAX;
   const heatFrac   = Math.max(0, Math.min(1, player.heat / 100));
   const heatColor  = heatFrac > 0.75 ? hudHot : heatFrac > 0.45 ? hudPink : hudBlue;
   const heatPulse  = 0.55 + 0.45 * Math.sin(getNow() * 0.012);
@@ -1436,56 +1654,13 @@ function drawHUD() {
 
   cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor);
   cy += 6;
-  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'NUKE', player.ultReady, nukeLabelColor);
+  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASS DROP', player.ultReady, nukeLabelColor);
   cy += 6;
 
   cy = drawHudLabel('HEAT', tx, cy, heatFrac > 0.45 ? heatColor : hudMuted, heatColor, 13, 0.84);
   if (heatFrac > 0.75) setGlow(heatColor, 10 * heatPulse);
   cy = drawPremiumBar(tx, cy, barW, heatFrac, heatColor, 14);
   clearGlow();
-  cy += 8;
-  const activeLabels = [];
-  if (player.altFireType === 'spread') activeLabels.push('SPREAD SHOT');
-  if (player.altFireType === 'bass') activeLabels.push('BASS PULSE');
-
-  
-
-  if (activeLabels.length < 0) {
-    ctx.font = '14px monospace';
-    ctx.fillStyle = '#4b445f';
-    ctx.fillText('—', tx, cy);
-    cy += 22;
-  } else {
-    activeLabels.forEach(label => {
-      const chipColor = label === 'SPREAD SHOT'
-        ? spreadColor
-        : label === 'BASS PULSE'
-          ? bassColor
-          : hudColor;
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = '#ffffff';
-      traceSlantedBox(tx, cy - 2, barW, 28, 9);
-      ctx.fill();
-      ctx.globalAlpha = 0.92;
-      setGlow(chipColor, 12);
-      ctx.font = 'bold 14px monospace';
-      ctx.fillStyle = chipColor;
-      ctx.fillText(label, tx + 14, cy + 5);
-      clearGlow();
-      cy += 34;
-
-      if (label === 'SPREAD SHOT') {
-        const spreadFrac = Math.max(0, player.spreadFuel / player.SPREAD_MAX_FUEL);
-        cy = drawPremiumBar(tx, cy - 2, barW, spreadFrac, spreadColor, 12);
-        cy += 8;
-      } else if (label === 'BASS PULSE') {
-        const bassFrac = Math.max(0, player.bassFuel / player.BASS_MAX_FUEL);
-        cy = drawPremiumBar(tx, cy - 2, barW, bassFrac, bassColor, 12);
-        cy += 8;
-      }
-    });
-  }
-
   clearGlow();
   ctx.restore();
 }
@@ -1569,17 +1744,17 @@ function drawRuntimeErrorOverlay() {
 const tutorial = {
   STEP_COMPLETE_HOLD_MS: 450,
   steps: [
-    { id: 'move', title: 'MOVE - A / D', subtitle: 'SWEEP LEFT AND RIGHT THROUGH BOTH MARKERS', focus: null, accent: COLOR_CYAN, minTime: 2200 },
-    { id: 'shoot', title: 'FIRE - HOLD J OR MOUSE', subtitle: 'KILL 5 // STAND STILL TO FIRE FASTER', focus: null, accent: '#ffffff', minTime: 2800 },
-    { id: 'heat', title: 'FIRING BUILDS HEAT', subtitle: 'RELEASE FIRE TO COOL BACK DOWN', focus: 'shipArc', accent: '#ff8800', minTime: 2600 },
-    { id: 'dash', title: 'DASH - SPACE + A / D', subtitle: 'DASH THROUGH ENEMIES TO DELETE THEM', focus: null, accent: COLOR_CYAN, minTime: 2600 },
-    { id: 'refund', title: 'DASH VENTS HEAT', subtitle: 'BUILD HEAT, THEN DASH TO KILL + DUMP IT', focus: 'shipArc', accent: '#9be7ff', minTime: 2200 },
-    { id: 'overdrive', title: 'KILLS FILL OVERDRIVE', subtitle: 'PURPLE STATE = FASTER FIRE, SPEED, NO HEAT', focus: 'overdrive', accent: '#cc44ff', minTime: 2600 },
-    { id: 'damage', title: 'TAKING DAMAGE KILLS OVERDRIVE', subtitle: 'LET THE LASER HIT YOU', focus: 'overdrive', accent: '#ff5544', minTime: 3200 },
-    { id: 'spread', title: 'SPREAD SHOT - WIDE CLEAR', subtitle: 'HOLD K OR RIGHT CLICK TO SHRED THE SWARM', focus: null, accent: '#ffcc00', minTime: 2200 },
-    { id: 'bass', title: 'BASS PULSE - CLOSE BURST', subtitle: 'HOLD K OR RIGHT CLICK TO BLAST ANYTHING CLOSE', focus: null, accent: '#a3122a', minTime: 2200 },
-    { id: 'nuke', title: 'Q - NUKE', subtitle: 'PRESS Q TO WIPE THE SCREEN // ONLY 3 PER RUN', focus: 'nuke', accent: COLOR_PINK, minTime: 2200 },
-    { id: 'release', title: 'HOLD LANES. MANAGE HEAT. CHASE OVERDRIVE.', subtitle: 'GOOD LUCK', focus: null, accent: '#ffffff', minTime: 6200 }
+    { id: 'move', title: 'MOVE', subtitle: 'A / D', focus: null, accent: COLOR_CYAN, minTime: 2200 },
+    { id: 'shoot', title: 'SHOOT', subtitle: 'HOLD J OR MOUSE', focus: null, accent: '#ffffff', minTime: 2800 },
+    { id: 'heat', title: 'SHOOTING BUILDS HEAT', subtitle: 'STOP FIRING TO COOL', focus: 'shipArc', accent: '#ff8800', minTime: 2600 },
+    { id: 'dash', title: 'DASH LEFT / RIGHT', subtitle: 'SPACEBAR + A OR D', focus: null, accent: COLOR_CYAN, minTime: 2600 },
+    { id: 'dashKill', title: 'DASH KILLS', subtitle: 'DASH THROUGH BOTH ENEMIES', focus: null, accent: COLOR_CYAN, minTime: 2400 },
+    { id: 'refund', title: 'DASH COOLS YOU', subtitle: 'DASH TO DUMP HEAT', focus: 'shipArc', accent: '#9be7ff', minTime: 2200 },
+    { id: 'flowState', title: 'FLOW STATE', subtitle: 'FASTER SHOTS\nNO HEAT', focus: 'flowState', accent: '#cc44ff', minTime: 2600 },
+    { id: 'damage', title: 'HIT = FLOW STATE LOST', subtitle: 'LET IT HIT', focus: null, accent: '#ff5544', minTime: 3200 },
+    { id: 'spread', title: 'LASER', subtitle: 'HOLD K OR RIGHT CLICK', focus: null, accent: '#39ff14', minTime: 2200 },
+    { id: 'nuke', title: 'BASS DROP', subtitle: 'PRESS Q\n3 PER RUN', focus: 'nuke', accent: '#a3122a', minTime: 2200 },
+    { id: 'release', title: 'HOLD LANES. MANAGE HEAT. CHASE FLOW STATE.', subtitle: 'GOOD LUCK', focus: null, accent: '#ffffff', minTime: 6200 }
   ],
   stepIndex: 0,
   stepTimer: 0,
@@ -1589,7 +1764,7 @@ const tutorial = {
   prevDroneY: 0,
   prevBulletCount: 0,
   prevDashActive: false,
-  prevOverdriveActive: false,
+  prevFlowStateActive: false,
   stepState: null,
 
   start() {
@@ -1601,7 +1776,7 @@ const tutorial = {
     this.prevDroneY = drone.y;
     this.prevBulletCount = 0;
     this.prevDashActive = false;
-    this.prevOverdriveActive = false;
+    this.prevFlowStateActive = false;
     player.lives = 99;
     player.invincibleTimer = 999999;
     player.score = 0;
@@ -1621,7 +1796,6 @@ const tutorial = {
     hitSparks.reset();
     impactFX.reset();
     smokeParticles.reset();
-    bassPulse.reset();
     screenNuke.reset();
     turretIndicators.reset();
     streakCallout.reset();
@@ -1653,12 +1827,16 @@ const tutorial = {
 
   _spawnStaticTarget(x, y, hp = 8, elite = false) {
     const stats = getStageEnemyStats();
-    shards.pool.push(shards._makeShard(
+    const target = shards._makeShard(
       x,
       y,
       Object.assign({}, stats, { speed: 0, baseHp: hp }),
       elite
-    ));
+    );
+    target.vx = 0;
+    target.vy = 0;
+    target.tutorialStatic = true;
+    shards.pool.push(target);
   },
 
   _spawnAltOrb(type, x, y) {
@@ -1678,26 +1856,26 @@ const tutorial = {
       distanceMoved: 0,
       shotsFired: 0,
       dashes: 0,
+      dashLeft: false,
+      dashRight: false,
       startKills: stage.kills,
       startLives: player.lives,
       startHeat: player.heat,
       startUltUses: player.ultUses,
       heated: false,
       completedAt: null,
-      overdriveSeenAt: null,
-      overdriveWaveSpawned: false,
+      flowStateSeenAt: null,
+      flowStateWaveSpawned: false,
       damageRespawnTimer: 0,
       moveZones: [],
       spreadCollected: false,
-      spreadUsed: false,
-      bassCollected: false,
-      bassUsed: false
+      spreadUsed: false
     };
     this.prevDroneX = drone.x;
     this.prevDroneY = drone.y;
     this.prevBulletCount = bullets.pool.length;
     this.prevDashActive = dash.duration > 0;
-    this.prevOverdriveActive = player.overdriveActive;
+    this.prevFlowStateActive = player.flowStateActive;
 
     this._clearArena();
     this._setupStep(this.steps[index]);
@@ -1706,12 +1884,10 @@ const tutorial = {
   _setupStep(step) {
     if (!step) return;
 
-    audio.stopLoop('bassPulseLoop');
     player.hitFlashTimer = 0;
     player.dashHeatFlashTimer = 0;
     player.altFireType = null;
     player.spreadFuel = 0;
-    player.bassFuel = 0;
     player.altFireCooldown = 0;
     player.overheated = false;
     player.overheatTimer = 0;
@@ -1722,9 +1898,9 @@ const tutorial = {
     switch (step.id) {
       case 'move':
         player.heat = 0;
-        player.overdriveCharge = 0;
-        player.overdriveActive = false;
-        player.overdriveTimer = 0;
+        player.flowStateCharge = 0;
+        player.flowStateActive = false;
+        player.flowStateTimer = 0;
         player.ultCharge = 0;
         player.ultReady = true;
         player.ultUses = 3;
@@ -1738,10 +1914,10 @@ const tutorial = {
         break;
       case 'heat':
         player.heat = 0;
-        this._spawnStaticTarget(drone.x - 90, centerY - 70, 18, false);
-        this._spawnStaticTarget(drone.x + 110, centerY - 10, 18, false);
         break;
       case 'dash':
+        break;
+      case 'dashKill':
         this._spawnStaticTarget(PLAY_X + 90, drone.y, 8, false);
         this._spawnStaticTarget(PLAY_X + PLAY_W - 90, drone.y, 8, false);
         break;
@@ -1750,18 +1926,18 @@ const tutorial = {
         this.stepState.startHeat = player.heat;
         this._spawnWave(3, { baseX: PLAY_X + PLAY_W / 2, speed: 52, hp: 6, spreadX: 220, baseY: PLAY_Y - 24 });
         break;
-      case 'overdrive':
+      case 'flowState':
         player.heat = 0;
-        player.overdriveActive = false;
-        player.overdriveTimer = 0;
-        player.overdriveCharge = 92;
+        player.flowStateActive = false;
+        player.flowStateTimer = 0;
+        player.flowStateCharge = 92;
         this._spawnWave(4, { speed: 88, hp: 1, spreadX: 220, baseY: PLAY_Y - 28 });
         break;
       case 'damage':
         player.heat = 0;
-        player.overdriveCharge = 0;
-        player.overdriveActive = true;
-        player.overdriveTimer = 4000;
+        player.flowStateCharge = 0;
+        player.flowStateActive = true;
+        player.flowStateTimer = 4000;
         this.stepState.startLives = player.lives;
         this.stepState.damageRespawnTimer = 1400;
         break;
@@ -1770,12 +1946,6 @@ const tutorial = {
         player.activateAltFire('spread');
         this.stepState.spreadCollected = true;
         this._spawnWave(12, { speed: 88, hp: 1, spreadX: 320, baseY: PLAY_Y - 34 });
-        break;
-      case 'bass':
-        player.heat = 0;
-        player.activateAltFire('bass');
-        this.stepState.bassCollected = true;
-        this._spawnWave(12, { speed: 82, hp: 1, spreadX: 280, baseY: PLAY_Y - 34 });
         break;
       case 'nuke':
         player.heat = 0;
@@ -1800,12 +1970,12 @@ const tutorial = {
       case 'move': return this.stepState.moveZones.length > 0 && this.stepState.moveZones.every(z => z.hit);
       case 'shoot': return killsThisStep >= 5;
       case 'heat': return this.stepState.heated && player.heat <= 15;
-      case 'dash': return this.stepState.dashes >= 1;
+      case 'dash': return this.stepState.dashLeft && this.stepState.dashRight;
+      case 'dashKill': return killsThisStep >= 2 || shards.pool.length === 0;
       case 'refund': return this.stepState.dashes >= 1 && player.heat <= this.stepState.startHeat - 8;
-      case 'overdrive': return this.stepState.overdriveSeenAt !== null && this.stepTimer - this.stepState.overdriveSeenAt >= 5000;
-      case 'damage': return player.lives < this.stepState.startLives && !player.overdriveActive;
+      case 'flowState': return this.stepState.flowStateSeenAt !== null && this.stepTimer - this.stepState.flowStateSeenAt >= 5000;
+      case 'damage': return player.lives < this.stepState.startLives && !player.flowStateActive;
       case 'spread': return this.stepState.spreadCollected && this.stepState.spreadUsed && killsThisStep >= 10;
-      case 'bass': return this.stepState.bassCollected && this.stepState.bassUsed && killsThisStep >= 10;
       case 'nuke': return player.ultUses < this.stepState.startUltUses && shards.pool.length === 0 && enemyBullets.pool.length === 0;
       case 'release': return this.stepTimer >= 1500;
       default: return false;
@@ -1813,26 +1983,28 @@ const tutorial = {
   },
 
   _drawTutorialLines(text, centerX, centerY, maxWidth, color, glowColor, baseSize) {
-    const words = text.split(' ');
+    const paragraphs = String(text || '').split('\n');
     const lines = [];
-    let current = '';
 
     ctx.save();
     let fontSize = baseSize;
     for (; fontSize >= 22; fontSize -= 2) {
       ctx.font = `bold ${fontSize}px monospace`;
       lines.length = 0;
-      current = '';
-      for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word;
-        if (ctx.measureText(candidate).width <= maxWidth || current === '') {
-          current = candidate;
-        } else {
-          lines.push(current);
-          current = word;
+      for (const paragraph of paragraphs) {
+        const words = paragraph.split(' ');
+        let current = '';
+        for (const word of words) {
+          const candidate = current ? `${current} ${word}` : word;
+          if (ctx.measureText(candidate).width <= maxWidth || current === '') {
+            current = candidate;
+          } else {
+            lines.push(current);
+            current = word;
+          }
         }
+        if (current) lines.push(current);
       }
-      if (current) lines.push(current);
       if (lines.length <= 2) break;
     }
 
@@ -1866,7 +2038,7 @@ const tutorial = {
       ctx.stroke();
     } else {
       let x = drone.x - 66, y = drone.y - 34, w = 132, h = 68;
-      if (focus === 'overdrive') {
+      if (focus === 'flowState') {
         const inset = Math.max(18, PLAY_W * 0.06);
         x = PLAY_X + inset - 10;
         y = PLAY_Y + PLAY_H - 28;
@@ -1905,6 +2077,18 @@ const tutorial = {
     ctx.restore();
   },
 
+  _getTutorialSubtitle(step) {
+    if (!step) return '';
+    if (step.id === 'dash') {
+      return `SPACEBAR + A OR D\nLEFT ${this.stepState.dashLeft ? '1' : '0'} / 1\nRIGHT ${this.stepState.dashRight ? '1' : '0'} / 1`;
+    }
+    if (step.id === 'dashKill') {
+      const killed = Math.max(0, stage.kills - this.stepState.startKills);
+      return `${Math.min(2, killed)} / 2`;
+    }
+    return step.subtitle;
+  },
+
   update(delta) {
     if (!this.active) return;
     const step = this.steps[this.stepIndex];
@@ -1925,7 +2109,11 @@ const tutorial = {
     this.prevBulletCount = bullets.pool.length;
 
     const dashActive = dash.duration > 0;
-    if (dashActive && !this.prevDashActive) this.stepState.dashes++;
+    if (dashActive && !this.prevDashActive) {
+      this.stepState.dashes++;
+      if (dash.surgeDir < 0) this.stepState.dashLeft = true;
+      if (dash.surgeDir > 0) this.stepState.dashRight = true;
+    }
     this.prevDashActive = dashActive;
 
     if (player.heat >= 45) this.stepState.heated = true;
@@ -1939,27 +2127,26 @@ const tutorial = {
     }
     if (player.altFireType === 'spread') this.stepState.spreadCollected = true;
     if (player.altFireType === 'spread' && player.spreadFuel < player.SPREAD_MAX_FUEL) this.stepState.spreadUsed = true;
-    if (player.altFireType === 'bass') this.stepState.bassCollected = true;
-    if (player.altFireType === 'bass' && player.bassFuel < player.BASS_MAX_FUEL - 4) this.stepState.bassUsed = true;
 
-    if (player.overdriveActive && !this.prevOverdriveActive && step.id === 'overdrive' && this.stepState.overdriveSeenAt === null) {
-      this.stepState.overdriveSeenAt = this.stepTimer;
-      if (!this.stepState.overdriveWaveSpawned) {
-        this.stepState.overdriveWaveSpawned = true;
+
+    if (player.flowStateActive && !this.prevFlowStateActive && step.id === 'flowState' && this.stepState.flowStateSeenAt === null) {
+      this.stepState.flowStateSeenAt = this.stepTimer;
+      if (!this.stepState.flowStateWaveSpawned) {
+        this.stepState.flowStateWaveSpawned = true;
         this._spawnWave(8, { speed: 96, hp: 1, spreadX: 320, baseY: PLAY_Y - 34 });
       }
     }
     if (step.id === 'damage' && player.lives >= this.stepState.startLives) {
-      player.overdriveActive = true;
-      player.overdriveTimer = 999999;
-      player.overdriveCharge = Math.max(player.overdriveCharge, 100);
+      player.flowStateActive = true;
+      player.flowStateTimer = 999999;
+      player.flowStateCharge = Math.max(player.flowStateCharge, 100);
       this.stepState.damageRespawnTimer -= delta;
       if (this.stepState.damageRespawnTimer <= 0 && enemyBullets.pool.length === 0) {
         this._spawnTutorialHitShot();
         this.stepState.damageRespawnTimer = 1400;
       }
     }
-    this.prevOverdriveActive = player.overdriveActive;
+    this.prevFlowStateActive = player.flowStateActive;
 
     if (this._isStepComplete(step) && this.stepState.completedAt === null) {
       this.stepState.completedAt = this.stepTimer;
@@ -2019,7 +2206,7 @@ const tutorial = {
       const titleLines = [
         'HOLD LANES',
         'MANAGE HEAT',
-        'CHASE OVERDRIVE'
+        'CHASE FLOW STATE'
       ];
       const drawSpacedLine = (text, y, opts = {}) => {
         const spacing = opts.spacing ?? Math.max(3, headingSize * 0.05);
@@ -2108,64 +2295,28 @@ const tutorial = {
     }
 
     const panelW = Math.min(PLAY_W - 96, 760);
-    const panelX = PLAY_X + (PLAY_W - panelW) / 2;
-    const panelY = PLAY_Y + PLAY_H * 0.34;
+    const panelY = PLAY_Y + PLAY_H * 0.35;
     const hudBlue = '#2e3bf0';
-    const hudPurple = '#4216d2';
     const hudPink = '#dd32b3';
-    const hudHot = '#fb29fd';
     const hudLite = '#d9d4ff';
-    const accentColor = accent === '#ffffff' ? hudLite : accent;
-    const titleColor = step.id === 'heat'
-      ? hudLite
-      : step.id === 'nuke'
-        ? hudLite
-        : accentColor;
-    const titleGlow = step.id === 'heat'
-      ? hudPink
-      : step.id === 'nuke'
-        ? hudHot
-        : accentColor;
+    const accentColor = '#31afd4';
+    const titleColor = '#f4f0ff';
+    const titleGlow = '#31afd4';
+    const subtitleColor = '#e8e2ff';
 
     ctx.save();
-    const accentW = Math.min(260, panelW * 0.4);
-    const accentX = panelX + (panelW - accentW) / 2;
-    const accentY = panelY - 54;
-    ctx.globalAlpha = 0.18 * this.fadeAlpha;
-    ctx.strokeStyle = hudBlue;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(panelX + panelW * 0.16, panelY + 54);
-    ctx.lineTo(panelX + panelW * 0.84, panelY + 54);
-    ctx.stroke();
-
-    ctx.globalAlpha = 0.14 * this.fadeAlpha;
-    ctx.strokeStyle = hudPink;
-    ctx.beginPath();
-    ctx.moveTo(accentX, accentY);
-    ctx.lineTo(accentX + accentW, accentY);
-    ctx.stroke();
-
-    ctx.globalAlpha = 0.78 * this.fadeAlpha;
-    setGlow(accentColor, 14);
-    ctx.strokeStyle = accentColor;
-    ctx.beginPath();
-    ctx.moveTo(accentX + accentW * 0.18, accentY);
-    ctx.lineTo(accentX + accentW * 0.82, accentY);
-    ctx.stroke();
-    clearGlow();
-
     ctx.globalAlpha = 0.95 * this.fadeAlpha;
-    this._drawTutorialLines(step.title, PLAY_X + PLAY_W / 2, panelY - 8, panelW - 48, titleColor, titleGlow, 60);
-
-    this._drawTutorialLines(step.subtitle, PLAY_X + PLAY_W / 2, panelY + 54, panelW - 88, hudLite, accentColor, 32);
+    const titleBaseSize = step.id === 'heat' ? 48 : 56;
+    const subtitleBaseSize = step.id === 'dash' ? 40 : 44;
+    this._drawTutorialLines(step.title, PLAY_X + PLAY_W / 2, panelY - 22, panelW - 56, titleColor, titleGlow, titleBaseSize);
+    this._drawTutorialLines(this._getTutorialSubtitle(step), PLAY_X + PLAY_W / 2, panelY + 78, panelW - 56, subtitleColor, titleGlow, subtitleBaseSize);
 
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = hudPink;
     clearGlow();
     setGlow(hudPink, 8);
-    ctx.fillText(`STEP ${this.stepIndex + 1} / ${this.steps.length}`, PLAY_X + PLAY_W / 2, panelY - 98);
+    ctx.fillText(`STEP ${this.stepIndex + 1} / ${this.steps.length}`, PLAY_X + PLAY_W / 2, panelY - 104);
     clearGlow();
     ctx.restore();
   },
@@ -2188,13 +2339,12 @@ const tutorial = {
 };
 
 function _resetAllState() {
-  audio.stopLoop('bassPulseLoop');
   player.score = 0;
   player.dead = false;
   player.lives = 3;
-  player.overdriveCharge = 0;
-  player.overdriveActive = false;
-  player.overdriveTimer = 0;
+  player.flowStateCharge = 0;
+  player.flowStateActive = false;
+  player.flowStateTimer = 0;
   player.chain = 0;
   player.chainTimer = 0;
   player.heat = 0;
@@ -2206,12 +2356,10 @@ function _resetAllState() {
   player.ultUses = 3;
   player.altFireType = null;
   player.spreadFuel = 0;
-  player.bassFuel = 0;
   player.altFireCooldown = 0;
   player.invincibleTimer = 0;
   altFireDropIndex = 0;
   shards.reset();
-  bassPulse.reset();
   if (typeof laser !== 'undefined' && laser && typeof laser.reset === 'function') laser.reset();
   screenNuke.reset();
   turretIndicators.reset();
@@ -2230,6 +2378,7 @@ function _resetAllState() {
   drone.init();
   drone.tilt = 0;
   dash.reset();
+  stage10WipeProgress = 0;
 }
 
 function startGame() {

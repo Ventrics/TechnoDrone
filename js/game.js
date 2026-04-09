@@ -75,11 +75,97 @@ window.addEventListener('keydown', e => {
 });
 
 let lastTime = 0;
+let stage10WipeProgress = 0;
+let _negativeSpaceBackdrop = null;
+let _negativeSpaceBackdropW = 0;
+let _negativeSpaceBackdropH = 0;
+
+function _buildNegativeSpaceBackdrop() {
+  const bg = document.createElement('canvas');
+  bg.width = canvas.width;
+  bg.height = canvas.height;
+  const bctx = bg.getContext('2d');
+
+  bctx.fillStyle = '#05060c';
+  bctx.fillRect(0, 0, bg.width, bg.height);
+
+  bctx.save();
+  bctx.beginPath();
+  bctx.rect(0, 0, bg.width, bg.height);
+  bctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  bctx.clip('evenodd');
+
+  const wash = bctx.createLinearGradient(0, 0, bg.width, bg.height);
+  wash.addColorStop(0, 'rgba(0,8,64,0.8)');
+  wash.addColorStop(0.35, 'rgba(46,59,240,0.08)');
+  wash.addColorStop(0.68, 'rgba(221,50,179,0.08)');
+  wash.addColorStop(1, 'rgba(5,6,12,0.9)');
+  bctx.fillStyle = wash;
+  bctx.fillRect(0, 0, bg.width, bg.height);
+
+  const dotColors = [
+    'rgba(251,41,253,0.78)',
+    'rgba(221,50,179,0.72)',
+    'rgba(66,22,210,0.72)',
+    'rgba(46,59,240,0.8)',
+    'rgba(255,255,255,0.62)',
+  ];
+
+  const spacing = 86;
+  for (let y = 24; y < bg.height; y += spacing) {
+    for (let x = 18; x < bg.width; x += spacing) {
+      if (x > PLAY_X - 40 && x < PLAY_X + PLAY_W + 40 && y > PLAY_Y - 40 && y < PLAY_Y + PLAY_H + 40) {
+        continue;
+      }
+      const idx = ((x / spacing) + (y / spacing)) % dotColors.length | 0;
+      const radius = 1.6 + (((x + y) / spacing) % 3) * 0.45;
+      bctx.save();
+      bctx.shadowColor = dotColors[idx];
+      bctx.shadowBlur = 12;
+      bctx.fillStyle = dotColors[idx];
+      bctx.beginPath();
+      bctx.arc(x, y, radius, 0, Math.PI * 2);
+      bctx.fill();
+      bctx.restore();
+    }
+  }
+
+  const orbA = bctx.createRadialGradient(PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 0, PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 260);
+  orbA.addColorStop(0, 'rgba(46,59,240,0.18)');
+  orbA.addColorStop(0.55, 'rgba(66,22,210,0.08)');
+  orbA.addColorStop(1, 'rgba(46,59,240,0)');
+  bctx.fillStyle = orbA;
+  bctx.fillRect(0, 0, bg.width, bg.height);
+
+  const orbB = bctx.createRadialGradient(PLAY_X + PLAY_W + 150, PLAY_Y + PLAY_H * 0.62, 0, PLAY_X + PLAY_W + 150, PLAY_Y + PLAY_H * 0.62, 300);
+  orbB.addColorStop(0, 'rgba(251,41,253,0.17)');
+  orbB.addColorStop(0.5, 'rgba(221,50,179,0.08)');
+  orbB.addColorStop(1, 'rgba(251,41,253,0)');
+  bctx.fillStyle = orbB;
+  bctx.fillRect(0, 0, bg.width, bg.height);
+
+  bctx.restore();
+
+  _negativeSpaceBackdrop = bg;
+  _negativeSpaceBackdropW = canvas.width;
+  _negativeSpaceBackdropH = canvas.height;
+}
+
+function _drawNegativeSpaceBackdrop() {
+  if (!_negativeSpaceBackdrop || _negativeSpaceBackdropW !== canvas.width || _negativeSpaceBackdropH !== canvas.height) {
+    _buildNegativeSpaceBackdrop();
+  }
+  ctx.drawImage(_negativeSpaceBackdrop, 0, 0);
+}
 
 function update(delta) {
   if (gameState === 'title') { updateTitle(delta); return; }
   if (gameState === 'leaderboard') { leaderboard.update(delta); return; }
-  if (gameState === 'win') { return; }
+  if (gameState === 'win') {
+    starField.update(delta);
+    drone.update(delta);
+    return;
+  }
   if (paused) { return; }
 
   if (player.dead) {
@@ -98,7 +184,10 @@ function update(delta) {
     tutorial.update(delta);
     const dt = effectiveDelta / 1000;
     shards.pool = shards.pool.filter(s => {
-      if (!s.isKamikaze) {
+      if (s.tutorialStatic) {
+        s.vx = 0;
+        s.vy = 0;
+      } else if (!s.isKamikaze) {
         const curAngle = Math.atan2(s.vy, s.vx);
         const tgtAngle = Math.atan2(drone.y - s.y, drone.x - s.x);
         let diff = tgtAngle - curAngle;
@@ -138,9 +227,11 @@ function update(delta) {
   }
   player.update(effectiveDelta);
   checkCollisions();
-  bassPulse.update(effectiveDelta);
   screenNuke.update(effectiveDelta);
   streakCallout.update(effectiveDelta);
+
+  if (stage.current === 10 && stage10WipeProgress < 1)
+    stage10WipeProgress = Math.min(1, stage10WipeProgress + delta / 1500);
 
   if (tutorialAllowsControl('nuke') && (justPressed['q'] || justPressed['Q'])) screenNuke.fire();
 }
@@ -161,8 +252,7 @@ function render() {
   }
 
   // Clear full canvas (panel area background)
-  ctx.fillStyle = '#08080c';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  _drawNegativeSpaceBackdrop();
 
   // Play area background
   ctx.fillStyle = COLOR_BG;
@@ -179,29 +269,78 @@ function render() {
 
   const sideBarY = PLAY_Y + 10;
   const sideBarH = PLAY_H - 20;
+  const odRailFrac = player.flowStateActive
+    ? player.flowStateTimer / player.FLOW_STATE_DURATION
+    : player.flowStateCharge / player.FLOW_STATE_MAX;
+  const odRailActive = player.flowStateActive;
+  const odRailColor = odRailActive ? '#e040fb' : '#8b5cf6';
+  const odRailPulse = odRailActive ? (0.72 + 0.28 * (Math.sin(getNow() * 0.022) * 0.5 + 0.5)) : 1;
   ctx.save();
-  ctx.globalAlpha = 0.72;
-  setGlow(stageColorBorder, 14);
-  ctx.fillStyle = stageColorBorder;
-  _roundRect(ctx, PLAY_X - 8, sideBarY, 4, sideBarH, 3);
-  ctx.fill();
-  _roundRect(ctx, PLAY_X + PLAY_W + 4, sideBarY, 4, sideBarH, 3);
-  ctx.fill();
-  ctx.globalAlpha = 0.2;
+  ctx.globalAlpha = 0.14;
   ctx.fillStyle = '#ffffff';
-  _roundRect(ctx, PLAY_X - 7, sideBarY + 14, 1, Math.max(0, sideBarH - 28), 1);
+  _roundRect(ctx, PLAY_X - 20, sideBarY, 12, sideBarH, 5);
   ctx.fill();
-  _roundRect(ctx, PLAY_X + PLAY_W + 5, sideBarY + 14, 1, Math.max(0, sideBarH - 28), 1);
+  if (odRailFrac > 0) {
+    const fillH = sideBarH * Math.max(0, Math.min(1, odRailFrac));
+    const fillY = sideBarY + sideBarH - fillH;
+    ctx.globalAlpha = odRailActive ? odRailPulse : 0.88;
+    setGlow(odRailColor, odRailActive ? 18 : 14);
+    ctx.fillStyle = odRailColor;
+    _roundRect(ctx, PLAY_X - 20, fillY, 12, fillH, 5);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 0.26;
+  ctx.fillStyle = '#ffffff';
+  _roundRect(ctx, PLAY_X - 16, sideBarY + 20, 2, Math.max(0, sideBarH - 40), 1);
   ctx.fill();
+
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = '#ffffff';
+  _roundRect(ctx, PLAY_X + PLAY_W + 8, sideBarY, 12, sideBarH, 5);
+  ctx.fill();
+  if (odRailFrac > 0) {
+    const fillH = sideBarH * Math.max(0, Math.min(1, odRailFrac));
+    const fillY = sideBarY + sideBarH - fillH;
+    ctx.globalAlpha = odRailActive ? odRailPulse : 0.88;
+    setGlow(odRailColor, odRailActive ? 18 : 14);
+    ctx.fillStyle = odRailColor;
+    _roundRect(ctx, PLAY_X + PLAY_W + 8, fillY, 12, fillH, 5);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 0.26;
+  ctx.fillStyle = '#ffffff';
+  _roundRect(ctx, PLAY_X + PLAY_W + 12, sideBarY + 20, 2, Math.max(0, sideBarH - 40), 1);
+  ctx.fill();
+
+  const flowStateLetters = ['F', 'L', 'O', 'W', ' ', 'S', 'T', 'A', 'T', 'E'];
+  const flowStateTextX = PLAY_X - 38;
+  const flowStateStartY = PLAY_Y + 92;
+  const flowStateSpacing = 30;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 38px monospace';
+  ctx.globalAlpha = odRailActive ? odRailPulse : 0.86;
+  ctx.shadowColor = odRailColor;
+  ctx.shadowBlur = odRailActive ? 18 : 12;
+  ctx.fillStyle = '#ffffff';
+  flowStateLetters.forEach((ch, idx) => {
+    ctx.fillText(ch, flowStateTextX, flowStateStartY + idx * flowStateSpacing);
+  });
+  ctx.globalAlpha = odRailActive ? 0.2 : 0.14;
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = odRailColor;
+  flowStateLetters.forEach((ch, idx) => {
+    ctx.fillText(ch, flowStateTextX, flowStateStartY + idx * flowStateSpacing - 1);
+  });
   clearGlow();
   ctx.restore();
 
-  // Overdrive world-state: energized border + edge strips
-  if (player.overdriveActive) {
+  // Flow State world-state: energized border + edge strips
+  if (player.flowStateActive) {
     const now = getNow();
     const odPulse = 0.6 + 0.4 * (Math.sin(now * 0.014) * 0.5 + 0.5);
-    const flashBoost = player.overdriveActivationFlash > 0
-      ? Math.pow(player.overdriveActivationFlash / 420, 1.5) * 0.5 : 0;
+    const flashBoost = player.flowStateActivationFlash > 0
+      ? Math.pow(player.flowStateActivationFlash / 420, 1.5) * 0.5 : 0;
 
     // Energized border — stacked thin strokes, no shadowBlur
     ctx.save();
@@ -228,11 +367,11 @@ function render() {
   const timerPulse = timerUrgent ? (0.72 + 0.28 * (Math.sin(getNow() * 0.025) * 0.5 + 0.5)) : 1;
   const timerColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : stageColorBorder;
   ctx.save();
-  const topBarInset = Math.max(18, PLAY_W * 0.06);
+  const topBarInset = Math.max(8, PLAY_W * 0.025);
   const topBarX = PLAY_X + topBarInset;
   const topBarY = PLAY_Y + 8;
   const topBarW = PLAY_W - topBarInset * 2;
-  const topBarH = 5;
+  const topBarH = 7;
   ctx.globalAlpha = 0.12;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(topBarX, topBarY, topBarW, topBarH);
@@ -249,7 +388,7 @@ function render() {
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = '#ffffff';
   ctx.shadowBlur = 0;
-  ctx.fillRect(topBarX + 18, topBarY + 1, Math.max(0, topBarW - 36), 1);
+  ctx.fillRect(topBarX + 22, topBarY + 1, Math.max(0, topBarW - 44), 1);
 
   const nextStageLabel = 'NEXT STAGE';
   const labelX = topBarX + topBarW * 0.5;
@@ -268,58 +407,57 @@ function render() {
   ctx.fillText(nextStageLabel, labelX, labelY - 1);
   ctx.restore();
 
-  // Bottom overdrive bar — mirrors top timer bar
+  // Bottom flow state bar — mirrors top timer bar
   {
-    const odFrac = player.overdriveActive
-      ? player.overdriveTimer / player.OVERDRIVE_DURATION
-      : player.overdriveCharge / player.OVERDRIVE_MAX;
-    const odActive = player.overdriveActive;
-    const odColor = odActive ? '#e040fb' : '#8b5cf6';
-    const odPulse = odActive ? (0.72 + 0.28 * (Math.sin(getNow() * 0.022) * 0.5 + 0.5)) : 1;
-    const botBarInset = Math.max(18, PLAY_W * 0.06);
+    const botBarInset = Math.max(8, PLAY_W * 0.025);
     const botBarX = PLAY_X + botBarInset;
     const botBarY = PLAY_Y + PLAY_H - 13;
     const botBarW = PLAY_W - botBarInset * 2;
-    const botBarH = 5;
+    const botBarH = 7;
+
+    const altActive = !!player.altFireType;
+    const altLabel = 'LASER';
+    const altColor = '#39ff14';
+    const altFrac = Math.max(0, player.spreadFuel / player.SPREAD_MAX_FUEL);
+    const altPulse = altActive ? (0.76 + 0.24 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5)) : 1;
+    const altBarY = botBarY;
+    const altLabelY = altBarY - 8;
 
     ctx.save();
-    // Track
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowBlur = 0;
-    ctx.fillRect(botBarX, botBarY, botBarW, botBarH);
+    if (altActive) {
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 0;
+      ctx.fillRect(botBarX, altBarY, botBarW, botBarH);
 
-    // Fill
-    if (odFrac > 0) {
-      const fillW = botBarW * odFrac;
-      ctx.globalAlpha = odPulse * (odActive ? 0.95 : 0.80);
-      ctx.fillStyle = odColor;
-      ctx.shadowColor = odColor;
-      ctx.shadowBlur = odActive ? 16 : 8;
-      ctx.fillRect(botBarX, botBarY, fillW, botBarH);
+      if (altFrac > 0) {
+        const altFillW = botBarW * altFrac;
+        ctx.globalAlpha = 0.92 * altPulse;
+        ctx.fillStyle = altColor;
+        ctx.shadowColor = altColor;
+        ctx.shadowBlur = 16;
+        ctx.fillRect(botBarX, altBarY, altFillW, botBarH);
+      }
+
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 0;
+      ctx.fillRect(botBarX + 22, altBarY + 1, Math.max(0, botBarW - 44), 1);
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.font = 'bold 17px monospace';
+      ctx.globalAlpha = 0.88;
+      ctx.shadowColor = altColor;
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = altColor;
+      ctx.fillText(altLabel, botBarX + botBarW * 0.5, altLabelY);
+      ctx.globalAlpha = 0.32;
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(altLabel, botBarX + botBarW * 0.5, altLabelY - 1);
     }
 
-    // Highlight line
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowBlur = 0;
-    ctx.fillRect(botBarX + 18, botBarY + 1, Math.max(0, botBarW - 36), 1);
-
-    const overdriveLabel = 'OVERDRIVE';
-    const odLabelX = botBarX + botBarW * 0.5;
-    const odLabelY = botBarY + botBarH + 18;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.font = 'bold 17px monospace';
-    ctx.globalAlpha = odActive ? odPulse : 0.82;
-    ctx.shadowColor = odColor;
-    ctx.shadowBlur = odActive ? 20 : 14;
-    ctx.fillStyle = odColor;
-    ctx.fillText(overdriveLabel, odLabelX, odLabelY);
-    ctx.globalAlpha = odActive ? 0.45 : 0.3;
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(overdriveLabel, odLabelX, odLabelY - 1);
     ctx.restore();
   }
 
@@ -346,7 +484,6 @@ function render() {
   pickups.draw();
   bullets.draw();
   enemyBullets.draw();
-  bassPulse.draw();
   drone.draw();
   screenNuke.draw();
   turretIndicators.draw();
@@ -369,9 +506,9 @@ function render() {
   bloomCtx.globalAlpha = 0.9;
   for (let i = 0; i < bullets.pool.length; i++) {
     const b = bullets.pool[i];
-    bloomCtx.fillStyle = b.overdriving ? '#e040fb' : COLOR_PINK;
+    bloomCtx.fillStyle = b.flowState ? '#e040fb' : COLOR_PINK;
     bloomCtx.beginPath();
-    bloomCtx.arc(b.x, b.y, b.overdriving ? 5 : 3, 0, Math.PI * 2);
+    bloomCtx.arc(b.x, b.y, b.flowState ? 5 : 3, 0, Math.PI * 2);
     bloomCtx.fill();
   }
   bloomCtx.globalAlpha = 0.28;
@@ -395,10 +532,10 @@ function render() {
     const tipAngle = -Math.PI / 2 + drone.tilt;
     const tx = drone.x + 22 * Math.cos(tipAngle);
     const ty = drone.y + 22 * Math.sin(tipAngle);
-    bloomCtx.globalAlpha = player.overdriveActive ? 0.95 : 0.85;
-    bloomCtx.fillStyle = player.overdriveActive ? '#e040fb' : COLOR_PINK;
+    bloomCtx.globalAlpha = player.flowStateActive ? 0.95 : 0.85;
+    bloomCtx.fillStyle = player.flowStateActive ? '#e040fb' : COLOR_PINK;
     bloomCtx.beginPath();
-    bloomCtx.arc(tx, ty, player.overdriveActive ? 5 : 4, 0, Math.PI * 2);
+    bloomCtx.arc(tx, ty, player.flowStateActive ? 5 : 4, 0, Math.PI * 2);
     bloomCtx.fill();
   }
   bloomCtx.restore();
@@ -413,9 +550,9 @@ function render() {
 
   stage.drawFlash();
 
-  // Activation flash — brief full-canvas magenta pulse on Overdrive start
-  if (player.overdriveActivationFlash > 0) {
-    const t = Math.pow(player.overdriveActivationFlash / 420, 2);
+  // Activation flash — brief full-canvas magenta pulse on Flow State start
+  if (player.flowStateActivationFlash > 0) {
+    const t = Math.pow(player.flowStateActivationFlash / 420, 2);
     ctx.save();
     ctx.globalAlpha = t * 0.28;
     ctx.fillStyle = '#cc44ff';
@@ -430,12 +567,27 @@ function render() {
   if (gameState === 'tutorial') tutorial.draw();
   if (paused) drawPauseMenu();
 
-  if (stage.current === 10) {
+  if (stage.current === 10 && stage10WipeProgress > 0) {
+    const wipeY = PLAY_Y + PLAY_H * stage10WipeProgress;
+    const wipedH = wipeY - PLAY_Y;
     ctx.save();
-    ctx.globalCompositeOperation = 'difference';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+    // Greyscale the wiped region
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, wipedH);
     ctx.restore();
+    // Glowing wipe edge line
+    if (stage10WipeProgress < 1) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      const grad = ctx.createLinearGradient(0, wipeY - 6, 0, wipeY + 6);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.95)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(PLAY_X, wipeY - 6, PLAY_W, 12);
+      ctx.restore();
+    }
   }
 }
 

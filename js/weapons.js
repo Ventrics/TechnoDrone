@@ -1,120 +1,92 @@
+// Two independent callout zones:
+//   top    — least important (chain milestones, weapon pickups, kill rewards)
+//   center — most important (FLOW STATE, CHAIN LOST/EXPIRED)
 const streakCallout = {
-  text:  '',
-  timer: 0,
-  duration: 1500,
-  scale: 1,
-  startScale: 2.0,
-  color: '#ffffff',
-  secondaryText: '',
-  secondaryTimer: 0,
-  secondaryDuration: 1500,
-  secondaryScale: 1,
-  secondaryStartScale: 2.0,
-  secondaryColor: '#ffffff',
+  top:    { text: '', timer: 0, duration: 0, scale: 1, startScale: 1, color: '#fff' },
+  center: { text: '', timer: 0, duration: 0, scale: 1, startScale: 1, color: '#fff' },
 
-  showOverdrive() {
-    this.show('OVERDRIVE', '#d56cff', 2200, 4.35, true);
+  _show(slot, text, color, duration, startScale) {
+    slot.text = text;
+    slot.color = color;
+    slot.timer = duration;
+    slot.duration = duration;
+    slot.startScale = startScale;
+    slot.scale = startScale;
+  },
+
+  _updateSlot(slot, delta) {
+    if (slot.timer <= 0) return;
+    slot.timer -= delta;
+    const elapsed = slot.duration - slot.timer;
+    if (elapsed < 420) {
+      const p = elapsed / 420;
+      slot.scale = slot.startScale - ((slot.startScale - 1.0) * (1 - Math.pow(1 - p, 3)));
+    } else {
+      slot.scale = 1.0;
+    }
+    if (slot.timer <= 0) slot.text = '';
+  },
+
+  _drawSlot(slot, y, baseSize, dim = 1.0) {
+    if (slot.timer <= 0 || !slot.text) return;
+    const alphaIn  = Math.min(1, (slot.duration - slot.timer) / 220);
+    const alphaOut = Math.min(1, slot.timer / 520);
+    const alpha    = Math.min(alphaIn, alphaOut) * dim;
+    const fontSize = Math.round(baseSize * slot.scale);
+    const glowBlur = Math.max(10, 18 * slot.scale);
+    const cx = PLAY_X + PLAY_W / 2;
+
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.shadowColor = slot.color || '#8b5cf6';
+
+    ctx.globalAlpha = alpha * 0.22;
+    ctx.shadowBlur  = glowBlur * 1.9;
+    ctx.fillStyle   = slot.color || '#8b5cf6';
+    ctx.fillText(slot.text, cx, y);
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = '#ffffff';
+    ctx.shadowBlur  = glowBlur;
+    ctx.fillText(slot.text, cx, y);
+  },
+
+  show(text, color, duration = 1500, startScale = 2.0, zone = 'top') {
+    this._show(this[zone], text, color, duration, startScale);
+  },
+
+  showFlowState() {
+    this._show(this.center, 'FLOW STATE', '#d56cff', 2200, 4.35);
   },
 
   showAltFire(type) {
-    if (type === 'spread') this.show('SPREAD SHOT', '#ffd400', 2400, 4.8);
-    else if (type === 'bass') this.show('BASS PULSE', '#a3122a', 2400, 4.8);
-  },
-
-  show(text, color, duration = 1500, startScale = 2.0, preferSecondary = false) {
-    if (preferSecondary && this.timer > 0 && this.text && this.text !== text) {
-      this.secondaryText = text;
-      this.secondaryColor = color;
-      this.secondaryTimer = duration;
-      this.secondaryDuration = duration;
-      this.secondaryStartScale = startScale;
-      this.secondaryScale = startScale;
-      return;
-    }
-    this.text = text;
-    this.color = color;
-    this.timer = duration;
-    this.duration = duration;
-    this.startScale = startScale;
-    this.scale = startScale;
+    if (type === 'spread') this._show(this.top, 'LASER', '#39ff14', 2400, 3.2);
   },
 
   update(delta) {
-    if (this.timer > 0) {
-      this.timer -= delta;
-      const elapsed = this.duration - this.timer;
-      if (elapsed < 420) {
-        const p = elapsed / 420;
-        const eased = 1 - Math.pow(1 - p, 3);
-        this.scale = this.startScale - ((this.startScale - 1.0) * eased);
-      } else {
-        this.scale = 1.0;
-      }
-      if (this.timer <= 0) this.text = '';
-    }
-    if (this.secondaryTimer > 0) {
-      this.secondaryTimer -= delta;
-      const elapsed = this.secondaryDuration - this.secondaryTimer;
-      if (elapsed < 420) {
-        const p = elapsed / 420;
-        const eased = 1 - Math.pow(1 - p, 3);
-        this.secondaryScale = this.secondaryStartScale - ((this.secondaryStartScale - 1.0) * eased);
-      } else {
-        this.secondaryScale = 1.0;
-      }
-      if (this.secondaryTimer <= 0) this.secondaryText = '';
-    }
+    this._updateSlot(this.top, delta);
+    this._updateSlot(this.center, delta);
   },
 
   draw() {
-    if (this.timer <= 0 && this.secondaryTimer <= 0) return;
-    const drawCallout = (text, color, timer, duration, scale, y, isSecondary = false) => {
-      if (timer <= 0 || !text) return;
-      const alphaIn = Math.min(1, (duration - timer) / 220);
-      const alphaOut = Math.min(1, timer / 520);
-      const alpha = Math.min(alphaIn, alphaOut);
-      const fontSize = Math.round((isSecondary ? 34 : 57) * scale);
-      const glowBlur = Math.max(isSecondary ? 12 : 16, (isSecondary ? 20 : 32) * scale);
-
-      ctx.globalAlpha = alpha * 0.2;
-      ctx.font = `${fontSize}px "anatol-mn", sans-serif`;
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = glowBlur * 2.1;
-      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
-
-      ctx.globalAlpha = alpha * 0.55;
-      ctx.shadowBlur = glowBlur;
-      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
-
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#f4f0ff';
-      ctx.shadowColor = color;
-      ctx.shadowBlur = Math.max(8, glowBlur * 0.55);
-      ctx.fillText(text, PLAY_X + PLAY_W / 2, y);
-    };
-
-    const mainY = PLAY_Y + PLAY_H * 0.35;
-    const secondaryY = mainY + 54;
+    if (this.top.timer <= 0 && this.center.timer <= 0) return;
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    drawCallout(this.text, this.color, this.timer, this.duration, this.scale, mainY, false);
-    drawCallout(this.secondaryText, this.secondaryColor, this.secondaryTimer, this.secondaryDuration, this.secondaryScale, secondaryY, true);
+
+    // Center slot takes the spotlight — dim top proportionally as center fades in
+    const centerPresence = this.center.timer > 0
+      ? Math.min(1, (this.center.duration - this.center.timer) / 350)
+      : 0;
+    const topDim = 1.0 - centerPresence * 0.78;
+
+    this._drawSlot(this.top,    PLAY_Y + PLAY_H * 0.16, 46, topDim);
+    this._drawSlot(this.center, PLAY_Y + PLAY_H * 0.42, 68, 1.0);
     ctx.restore();
   },
 
   reset() {
-    this.timer = 0;
-    this.text = '';
-    this.duration = 1500;
-    this.scale = 1;
-    this.startScale = 2.0;
-    this.secondaryTimer = 0;
-    this.secondaryText = '';
-    this.secondaryDuration = 1500;
-    this.secondaryScale = 1;
-    this.secondaryStartScale = 2.0;
+    this.top    = { text: '', timer: 0, duration: 0, scale: 1, startScale: 1, color: '#fff' };
+    this.center = { text: '', timer: 0, duration: 0, scale: 1, startScale: 1, color: '#fff' };
   }
 };
 
@@ -161,16 +133,16 @@ function tutorialAllowsControl(control) {
       return false;
     case 'shoot':
     case 'heat':
-    case 'overdrive':
+    case 'flowState':
       return control === 'fire';
     case 'dash':
+    case 'dashKill':
       return control === 'dash';
     case 'refund':
       return control === 'fire' || control === 'dash';
     case 'damage':
       return false;
     case 'spread':
-    case 'bass':
       return control === 'altFire';
     case 'nuke':
       return control === 'nuke';
@@ -207,7 +179,8 @@ const bullets = {
       hitRadius: opts.hitRadius || 8,
       tint: opts.tint || null,
       heavy: !!opts.heavy,
-      overdriving: !!opts.overdriving,
+      flowState: !!opts.flowState,
+      laser: !!opts.laser,
       spawnTime: getNow()
     });
   },
@@ -226,14 +199,14 @@ const bullets = {
       const baseAngle = -Math.PI / 2; // straight up
       if (spreadActive) {
         [-0.22, -0.11, 0, 0.11, 0.22].forEach(a => {
-          this.fire(x, y, baseAngle + a, { damage: Math.max(1, Math.ceil(player.effectiveDamage * 0.9)), len: 24, tint: '#ffcc00' });
+          this.fire(x, y, baseAngle + a, { damage: Math.max(1, Math.ceil(player.effectiveDamage * 0.9)), len: 42, tint: '#39ff14', laser: true });
         });
         player.spreadFuel = Math.max(0, player.spreadFuel - 10);
       } else {
-        this.fire(x, y, baseAngle, player.overdriveActive ? { pierce: 2, overdriving: true } : {});
+        this.fire(x, y, baseAngle, player.flowStateActive ? { pierce: 2, flowState: true } : {});
       }
       this.cooldown = player.fireRateCooldown;
-      if (!player.overdriveActive) {
+      if (!player.flowStateActive) {
         player.heat = Math.min(100, player.heat + player.HEAT_PER_SHOT);
       }
       audio.play('shoot');
@@ -258,8 +231,8 @@ const bullets = {
       ctx.save();
       ctx.lineCap = 'round';
 
-      if (b.overdriving) {
-        // === OVERDRIVE BULLET — short plasma bolt ===
+      if (b.flowState) {
+        // === FLOW STATE BULLET — short plasma bolt ===
         // Outer plasma glow (wide, short)
         setGlow('#cc44ff', 20);
         ctx.strokeStyle = '#cc44ff';
@@ -296,6 +269,57 @@ const bullets = {
         ctx.fillStyle   = '#ffffff';
         ctx.beginPath();
         ctx.arc(b.x, b.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (b.laser) {
+        // === LASER BOLT — neon green plasma beam ===
+        const tint = '#39ff14';
+        const hot  = '#c8ffc8';
+
+        // 1. Wide diffuse glow halo
+        setGlow(tint, 28);
+        ctx.strokeStyle = tint;
+        ctx.lineWidth   = 9;
+        ctx.globalAlpha = 0.18;
+        ctx.beginPath();
+        ctx.moveTo(b.x - vx * b.len * 1.4, b.y - vy * b.len * 1.4);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // 2. Bolt body — saturated green
+        ctx.lineWidth   = 4.5;
+        ctx.globalAlpha = 0.88;
+        ctx.beginPath();
+        ctx.moveTo(b.x - vx * b.len, b.y - vy * b.len);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // 3. Bright inner core
+        setGlow(hot, 6);
+        ctx.strokeStyle = hot;
+        ctx.lineWidth   = 1.8;
+        ctx.globalAlpha = 1.0;
+        ctx.beginPath();
+        ctx.moveTo(b.x - vx * b.len * 0.65, b.y - vy * b.len * 0.65);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // 4. Tip bloom
+        ctx.globalAlpha = 0.38;
+        ctx.shadowColor = tint;
+        ctx.shadowBlur  = 36;
+        ctx.fillStyle   = tint;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 5. White-hot tip
+        ctx.globalAlpha = 1.0;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur  = 8;
+        ctx.fillStyle   = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 2.2, 0, Math.PI * 2);
         ctx.fill();
 
       } else {
@@ -376,9 +400,14 @@ const bullets = {
 const pickups = {
   pool: [],
   popups: [],
+  eliteOrbs: [],
 
   spawnAltFireOrb(x, y, type) {
     this.pool.push({ x, y, type, life: 8000, radius: 10 });
+  },
+
+  spawnEliteOrb(x, y, type) {
+    this.eliteOrbs.push({ x, y, type, life: 16000, phase: 'float' });
   },
 
   update(delta) {
@@ -396,7 +425,7 @@ const pickups = {
 
       if (dist < 28) {
         if (player.altFireType) {
-          player.overdriveCharge = Math.min(player.OVERDRIVE_MAX, player.overdriveCharge + 18);
+          player.flowStateCharge = Math.min(player.FLOW_STATE_MAX, player.flowStateCharge + 18);
           audio.play('pickupCollect');
           return false;
         }
@@ -410,8 +439,34 @@ const pickups = {
       return p.life > 0;
     });
 
+    this.eliteOrbs = this.eliteOrbs.filter(orb => {
+      orb.life -= delta;
+      const dx = drone.x - orb.x;
+      const dy = drone.y - orb.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 250) orb.phase = 'pull';
+      if (dist > 0) {
+        const speed = orb.phase === 'pull' ? 600 : 60;
+        orb.x += (dx / dist) * speed * dt;
+        orb.y += (dy / dist) * speed * dt;
+      }
+      if (dist < 25) {
+        if (player.altFireType === 'spread') {
+          player.spreadFuel = player.SPREAD_MAX_FUEL;
+          streakCallout.showAltFire('spread');
+        } else {
+          player.activateAltFire(orb.type);
+          streakCallout.showAltFire(orb.type);
+        }
+        audio.play('pickupCollect');
+        return false;
+      }
+      return orb.life > 0;
+    });
+
     this.popups = this.popups.filter(t => {
-      t.y -= 40 * dt;
+      t.y -= (t.riseSpeed || 40) * dt;
+      t.x += (t.driftX || 0) * dt;
       t.life -= delta;
       return t.life > 0;
     });
@@ -423,7 +478,7 @@ const pickups = {
 
   draw() {
     this.pool.forEach(p => {
-      const color = p.type === 'spread' ? '#ffcc00' : '#a3122a';
+      const color = p.type === 'spread' ? '#39ff14' : '#a3122a';
       const r = p.radius;
       ctx.save();
       const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
@@ -449,184 +504,119 @@ const pickups = {
       ctx.restore();
     });
 
+    const now = getNow();
+    this.eliteOrbs.forEach(orb => {
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+      const spinPulse = 0.5 + 0.5 * Math.sin(now * 0.009);
+      const coreR = 7 + 2 * pulse;
+      const ringR = 14 + 3 * spinPulse;
+      const glowR = ringR * 3.5;
+
+      ctx.save();
+
+      // Outer bloom halo
+      const haloGrad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, glowR);
+      haloGrad.addColorStop(0,   'rgba(57, 255, 20, 0.22)');
+      haloGrad.addColorStop(0.3, 'rgba(57, 255, 20, 0.10)');
+      haloGrad.addColorStop(1,   'rgba(57, 255, 20, 0.00)');
+      ctx.fillStyle = haloGrad;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer ring
+      ctx.strokeStyle = '#39ff14';
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 18;
+      ctx.globalAlpha = 0.7 + 0.3 * spinPulse;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner ring
+      ctx.strokeStyle = '#afffaa';
+      ctx.lineWidth = 1;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = 0.5 + 0.4 * pulse;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, ringR * 0.65, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Solid core (white → green gradient)
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = 14;
+      ctx.globalAlpha = 1;
+      const coreGrad = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, coreR);
+      coreGrad.addColorStop(0,   '#ffffff');
+      coreGrad.addColorStop(0.4, '#afffaa');
+      coreGrad.addColorStop(1,   '#39ff14');
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, coreR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pull-phase spokes
+      if (orb.phase === 'pull') {
+        ctx.globalAlpha = 0.35 + 0.35 * pulse;
+        ctx.strokeStyle = '#39ff14';
+        ctx.lineWidth = 0.8;
+        ctx.shadowBlur = 6;
+        for (let i = 0; i < 4; i++) {
+          const angle = (now * 0.003) + (i * Math.PI / 2);
+          ctx.beginPath();
+          ctx.moveTo(orb.x + Math.cos(angle) * coreR * 1.2, orb.y + Math.sin(angle) * coreR * 1.2);
+          ctx.lineTo(orb.x + Math.cos(angle) * ringR * 1.4, orb.y + Math.sin(angle) * ringR * 1.4);
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    });
+
     this.popups.forEach(t => {
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       if (t.isScore) {
-        ctx.font = t.elite ? 'bold 16px monospace' : '13px monospace';
-        ctx.globalAlpha = Math.min(1, t.life / 300) * 0.85;
+        const maxLife = t.maxLife || Math.max(1, t.life);
+        const age = 1 - Math.max(0, t.life) / maxLife;
+        const alphaIn = Math.min(1, age / 0.12);
+        const alphaOut = Math.min(1, t.life / 240);
+        const alpha = Math.min(alphaIn, alphaOut);
+        const settle = age < 0.24 ? 1.22 - (age / 0.24) * 0.22 : 1.0;
+        const fontSize = Math.round((t.size || (t.elite ? 16 : 13)) * settle);
+        const glowBlur = t.elite ? 20 : 14;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.globalAlpha = alpha * 0.2;
+        ctx.fillStyle = t.color;
+        ctx.shadowColor = t.color;
+        ctx.shadowBlur = glowBlur * 2.2;
+        ctx.fillText(t.label, t.x, t.y);
+
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.shadowBlur = glowBlur;
+        ctx.fillText(t.label, t.x, t.y);
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = t.coreColor || '#f4f0ff';
+        ctx.shadowColor = t.color;
+        ctx.shadowBlur = Math.max(6, glowBlur * 0.55);
+        ctx.fillText(t.label, t.x, t.y);
       } else {
         ctx.font = 'bold 18px monospace';
         ctx.globalAlpha = Math.min(1, t.life / 500);
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.label, t.x, t.y);
       }
-      ctx.fillStyle = t.color;
-      ctx.fillText(t.label, t.x, t.y);
       ctx.restore();
     });
   },
 
-  reset() { this.pool = []; this.popups = []; }
+  reset() { this.pool = []; this.popups = []; this.eliteOrbs = []; }
 };
 
-const bassPulse = {
-  waves: [],
-  tickTimer: 0,
-  TICK_INTERVAL: 90,
-  RANGE: 450,
-  CONE_ANGLE: Math.PI / 180 * 34,
-  startupProgress: 0,
-  STARTUP_MS: 150,
 
-  update(delta) {
-    if (player.altFireType !== 'bass') {
-      this.waves = [];
-      this.tickTimer = 0;
-      if (this.startupProgress > 0) audio.stopLoop('bassPulseLoop');
-      this.startupProgress = 0;
-      return;
-    }
-
-    const dt = delta / 1000;
-    const holding = !isTutorialNukeStep() && !isTutorialDamageStep() && isAltFireHeld() && !player.overheated;
-    const hasFuel = player.bassFuel > 0;
-
-    if (holding && hasFuel) {
-      if (this.startupProgress === 0) audio.startLoop('bassPulseLoop');
-      this.startupProgress = Math.min(1, this.startupProgress + delta / this.STARTUP_MS);
-      player.bassFuel = Math.max(0, player.bassFuel - 24 * dt);
-
-      this.tickTimer -= delta;
-      if (this.tickTimer <= 0) {
-        this.tickTimer = this.TICK_INTERVAL;
-        if (!player.overdriveActive) {
-          player.heat = Math.min(100, player.heat + 1.6);
-        }
-        this._dealDamage();
-        this.waves.push({
-          radius: 14,
-          life: 520,
-          width: 10 + this.startupProgress * 4,
-          alpha: 0.56,
-          arc: this.CONE_ANGLE * 0.95
-        });
-      }
-
-      if (player.bassFuel <= 0) {
-        player.altFireType = null;
-        player.bassFuel = 0;
-        audio.stopLoop('bassPulseLoop');
-      }
-    } else {
-      if (this.startupProgress > 0) audio.stopLoop('bassPulseLoop');
-      this.startupProgress = Math.max(0, this.startupProgress - delta / (this.STARTUP_MS * 0.7));
-    }
-
-    this.waves = this.waves.filter(w => {
-      w.life -= delta;
-      w.radius += delta * 0.75;
-      w.alpha = Math.max(0, w.life / 520) * 0.56;
-      return w.life > 0;
-    });
-  },
-
-  _dealDamage() {
-    const effectiveRange = this.RANGE * this.startupProgress;
-    const dmg = Math.max(1, Math.ceil(player.effectiveDamage * 0.75));
-    for (let i = shards.pool.length - 1; i >= 0; i--) {
-      const s = shards.pool[i];
-      const dx = s.x - drone.x;
-      const dy = s.y - drone.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > effectiveRange) continue;
-      // Cone points upward (-PI/2); check angle from upward direction
-      const angleToEnemy = Math.atan2(dy, dx);
-      const angleDiff = Math.abs(((angleToEnemy - (-Math.PI / 2) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-      if (angleDiff > this.CONE_ANGLE) continue;
-      const killed = applyDamageToShard(s, dmg);
-      hitSparks.emit(s.x, s.y, 1, 0, '#a3122a');
-      if (killed) destroyShard(s);
-    }
-  },
-
-  draw() {
-    if (player.altFireType !== 'bass') return;
-    const holding = !isTutorialNukeStep() && !isTutorialDamageStep() && isAltFireHeld() && player.bassFuel > 0 && !player.overheated;
-    const reach = this.startupProgress;
-
-    if (holding || reach > 0) {
-      const effectiveRange = this.RANGE * reach;
-      const pulse = getNow() * 0.02;
-      const waveColor = '#a3122a';
-      const waveHot = '#ff5a6f';
-      const waveCore = '#ffd3da';
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      // Cone origin is just above the drone tip (points upward)
-      const ox = drone.x, oy = drone.y - 14;
-      const BASE = -Math.PI / 2; // upward
-
-      this.waves.forEach(w => {
-        const alpha = w.alpha;
-
-        ctx.globalAlpha = alpha * 0.5;
-        setGlow(waveColor, 18);
-        ctx.strokeStyle = waveColor;
-        ctx.lineWidth = 16;
-        ctx.beginPath();
-        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc, BASE + w.arc);
-        ctx.stroke();
-
-        ctx.globalAlpha = alpha * 0.9;
-        setGlow(waveHot, 10);
-        ctx.strokeStyle = waveHot;
-        ctx.lineWidth = 10;
-        ctx.beginPath();
-        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc * 0.96, BASE + w.arc * 0.96);
-        ctx.stroke();
-
-        ctx.globalAlpha = alpha * 0.7;
-        setGlow(waveCore, 4);
-        ctx.strokeStyle = waveCore;
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(ox, oy, Math.max(0.1, w.radius || 0), BASE - w.arc * 0.88, BASE + w.arc * 0.88);
-        ctx.stroke();
-      });
-
-      ctx.globalAlpha = 0.09 + reach * 0.08;
-      const fillGrad = ctx.createRadialGradient(ox, oy, 0, ox, oy, effectiveRange);
-      fillGrad.addColorStop(0, 'rgba(210,120,255,0.28)');
-      fillGrad.addColorStop(0.32, 'rgba(177,76,255,0.14)');
-      fillGrad.addColorStop(0.68, 'rgba(177,76,255,0.08)');
-      fillGrad.addColorStop(1, 'rgba(177,76,255,0)');
-      ctx.fillStyle = fillGrad;
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      for (let i = 0; i <= 18; i++) {
-        const t = i / 18;
-        const ang = BASE - this.CONE_ANGLE + (this.CONE_ANGLE * 2 * t);
-        const edgeBulge = 0.34 + 0.34 * Math.sin(t * Math.PI);
-        const noseTaper = 0.54 + 0.42 * t;
-        const radius = effectiveRange * (edgeBulge + 0.12) * noseTaper;
-        ctx.lineTo(ox + Math.cos(ang) * radius, oy + Math.sin(ang) * radius);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      clearGlow();
-      ctx.restore();
-    }
-  },
-
-  reset() {
-    this.waves = [];
-    this.tickTimer = 0;
-    this.startupProgress = 0;
-  }
-};
 
 const screenNuke = {
   active:   false,
@@ -637,22 +627,21 @@ const screenNuke = {
 
   fire() {
     if (this.active || player.ultUses <= 0) return;
-    audio.play('nuke');
+    audio.startLoop('bassPulseLoop');
     player.ultUses--;
     player.ultCharge = 0;
     player.ultReady = player.ultUses > 0;
     this.active  = true;
     this.ring    = 0;
     this.maxRing = Math.sqrt(canvas.width * canvas.width + canvas.height * canvas.height);
-    this.flash   = 1;
-    const _wc = STAGE_ENEMY_COLORS[Math.min(stage.current - 1, 9)];
+    this.flash   = 0.72;
     this.rings = [
-      { r:    0, color: '#ffffff', width: 3,   speed: 1.0, alphaMult: 1.00 }, // shock front
-      { r:  -60, color: _wc,      width: 9,   speed: 1.0, alphaMult: 0.85 }, // main pressure wave
-      { r: -120, color: _wc,      width: 5.5, speed: 1.0, alphaMult: 0.50 }, // secondary
-      { r: -185, color: _wc,      width: 3,   speed: 1.0, alphaMult: 0.25 }, // tertiary
-      { r: -250, color: _wc,      width: 1.5, speed: 1.0, alphaMult: 0.10 }, // ghost trail
+      { r:   0, color: '#ffe7f4', width: 3,   speed: 1.06, alphaMult: 0.95, bloom: 5.5 }, // sharp front
+      { r: -42, color: '#a3122a', width: 14,  speed: 1.0,  alphaMult: 0.88, bloom: 8.5 }, // heavy main wave
+      { r: -96, color: '#ff4d8f', width: 8.5, speed: 0.98, alphaMult: 0.56, bloom: 6.5 }, // magenta tail
+      { r: -156, color: '#7b0d20', width: 4.5, speed: 0.94, alphaMult: 0.26, bloom: 4.0 }, // dark low-end tail
     ];
+    streakCallout.show('BASE DROP', '#ff5aa5', 1500, 2.65, 'center');
     stage.shakeTimer     = 800;
     stage.shakeIntensity = 14;
     stage.slowmoTimer    = 600;
@@ -689,6 +678,7 @@ const screenNuke = {
     if (this.rings[this.rings.length - 1].r > this.maxRing) {
       this.active = false;
       this.rings  = [];
+      audio.stopLoop('bassPulseLoop');
     }
   },
 
@@ -697,7 +687,10 @@ const screenNuke = {
 
     if (this.flash > 0) {
       ctx.save();
-      ctx.globalAlpha = this.flash * 0.4;
+      ctx.globalAlpha = this.flash * 0.18;
+      ctx.fillStyle   = '#ff4d8f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = this.flash * 0.08;
       ctx.fillStyle   = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.restore();
@@ -709,15 +702,22 @@ const screenNuke = {
       const alpha = fade * (r.alphaMult || 1.0);
       ctx.save();
       // Glow bloom pass
-      ctx.globalAlpha = alpha * 0.2;
+      ctx.globalAlpha = alpha * 0.16;
       ctx.strokeStyle = r.color;
-      ctx.lineWidth   = r.width * 6;
+      ctx.lineWidth   = r.width * (r.bloom || 5.5);
       ctx.beginPath();
       ctx.arc(drone.x, drone.y, r.r, 0, Math.PI * 2);
       ctx.stroke();
+
       // Core ring
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = alpha * 0.85;
       ctx.lineWidth   = r.width;
+      ctx.stroke();
+
+      // Thin highlight for that lo-fi waveform edge
+      ctx.globalAlpha = alpha * 0.46;
+      ctx.strokeStyle = '#fff3fa';
+      ctx.lineWidth   = Math.max(1.5, r.width * 0.22);
       ctx.stroke();
       ctx.restore();
     }

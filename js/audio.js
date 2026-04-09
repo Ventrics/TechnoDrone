@@ -282,14 +282,14 @@ window.audio = (function() {
     pickupCollect: () => createOsc('sine', 800, (g,t)=>{
       g.setValueAtTime(0.12, t); g.linearRampToValueAtTime(0, t+0.15);
     }, 0.15, 2400, 0.12),
-    overdriveActivate: () => [
+    flowStateActivate: () => [
       createOsc('sawtooth', 200, (g,t)=>{ g.setValueAtTime(0.15, t); g.linearRampToValueAtTime(0, t+0.3); }, 0.3, 1200, 0.3),
       createOsc('sine', 600, (g,t)=>{
         g.setValueAtTime(0, t);
         for(let i=0; i<4; i++){ g.setValueAtTime(0.08, t+i*0.125); g.setValueAtTime(0, t+i*0.125+0.1); }
       }, 0.5)
     ],
-    overdriveEnd: () => createOsc('sine', 1000, (g,t)=>{
+    flowStateEnd: () => createOsc('sine', 1000, (g,t)=>{
       g.setValueAtTime(0.1, t); g.linearRampToValueAtTime(0, t+0.25);
     }, 0.25, 300, 0.25),
     
