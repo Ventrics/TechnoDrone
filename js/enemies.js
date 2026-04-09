@@ -181,6 +181,70 @@ function spawnMini(x, y, color) {
   };
 }
 
+const OBSTACLE_GATE_PATTERNS = {
+  3: [0.32, 0.68, 0.42],
+  6: [0.62, 0.28, 0.70],
+  9: [0.40, 0.72, 0.30],
+};
+
+function createObstacleGatePiece(x, y, width, height, isTarget, rowId) {
+  return {
+    x, y,
+    size: Math.max(width, height) * 0.5,
+    gateWidth: width,
+    gateHeight: height,
+    color: isTarget ? '#ff2244' : '#f4f3ff',
+    vx: 0,
+    vy: 330,
+    angle: 0,
+    spin: 0,
+    pts: null,
+    hp: isTarget ? 1 : 9999,
+    maxHp: isTarget ? 1 : 9999,
+    isElite: false,
+    isKamikaze: false,
+    isMini: false,
+    isGatePiece: true,
+    isGateTarget: isTarget,
+    isGateBlocker: !isTarget,
+    gateRowId: rowId,
+    turnRate: 0,
+    flashTimer: 0,
+    hpBarTimer: 0,
+    lifetime: 12000,
+    shieldHp: 0,
+    maxShieldHp: 0,
+    _grazeCd: 0,
+  };
+}
+
+function spawnObstacleGateRow(rowIndex = 0) {
+  const pattern = OBSTACLE_GATE_PATTERNS[stage.current] || OBSTACLE_GATE_PATTERNS[3];
+  const targetCenter = pattern[rowIndex % pattern.length];
+  const rowId = `${stage.current}-${rowIndex}-${Date.now()}`;
+  const y = PLAY_Y - 18;
+  const h = 28;
+  const targetW = PLAY_W * 0.22;
+  const targetX = PLAY_X + PLAY_W * targetCenter;
+  const targetLeft = Math.max(PLAY_X + 80, Math.min(PLAY_X + PLAY_W - 80 - targetW, targetX - targetW * 0.5));
+  const targetRight = targetLeft + targetW;
+
+  const leftW = Math.max(0, targetLeft - PLAY_X);
+  const rightW = Math.max(0, PLAY_X + PLAY_W - targetRight);
+
+  if (leftW > 0) {
+    shards.pool.push(createObstacleGatePiece(PLAY_X + leftW * 0.5, y, leftW, h, false, rowId));
+  }
+  shards.pool.push(createObstacleGatePiece(targetLeft + targetW * 0.5, y, targetW, h, true, rowId));
+  if (rightW > 0) {
+    shards.pool.push(createObstacleGatePiece(targetRight + rightW * 0.5, y, rightW, h, false, rowId));
+  }
+}
+
+function clearObstacleGateRows() {
+  shards.pool = shards.pool.filter(s => !s.isGatePiece);
+}
+
 // X zones for turret placement — horizontal spread across play area
 const TURRET_X_ZONES = [0.12, 0.30, 0.50, 0.70, 0.88];
 const TURRET_SPAWN_SCHEDULES = {
@@ -491,78 +555,86 @@ const shards = {
     const dt = delta / 1000;
     const active = getActiveMechanics();
 
-    this.spawnTimer += delta;
-    if (this.spawnTimer >= this.spawnInterval && this.pool.length < this.maxEnemies) {
-      this.spawnTimer = 0;
-      const count = stage.current === 1
-        ? 2 + Math.floor(Math.random() * 2)
-        : 1 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < count && this.pool.length < this.maxEnemies; i++) {
-        if (Math.random() < this.homingChance) {
-          this.pool.push(spawnShard());
-        } else {
-          this.pool.push(spawnDrift());
+    if (!stage.obstacleActive) {
+      this.spawnTimer += delta;
+      if (this.spawnTimer >= this.spawnInterval && this.pool.length < this.maxEnemies) {
+        this.spawnTimer = 0;
+        const count = stage.current === 1
+          ? 2 + Math.floor(Math.random() * 2)
+          : 1 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < count && this.pool.length < this.maxEnemies; i++) {
+          if (Math.random() < this.homingChance) {
+            this.pool.push(spawnShard());
+          } else {
+            this.pool.push(spawnDrift());
+          }
         }
       }
-    }
 
-    if (active.has('kamikazes')) {
-      if (this.kamikazeTimer > 0) this.kamikazeTimer -= delta;
-      if (this.kamikazeTimer <= 0 && this.pool.length < this.maxEnemies) {
-        this.pool.push(spawnKamikaze());
-        this.kamikazeTimer = STAGE_CONFIG[stage.current - 1].kamikazeInterval || 2500;
+      if (active.has('kamikazes')) {
+        if (this.kamikazeTimer > 0) this.kamikazeTimer -= delta;
+        if (this.kamikazeTimer <= 0 && this.pool.length < this.maxEnemies) {
+          this.pool.push(spawnKamikaze());
+          this.kamikazeTimer = STAGE_CONFIG[stage.current - 1].kamikazeInterval || 2500;
+        }
       }
-    }
 
-    // Turret spawning — fixed schedule within the stage
-    const turretInterval = STAGE_CONFIG[stage.current - 1].turretInterval;
-    if (turretInterval > 0) {
-      const elapsed = STAGE_DURATION - stage.timer;
-      const turretSpawnTimes = TURRET_SPAWN_SCHEDULES[stage.current] || [];
-      for (let ti = 0; ti < turretSpawnTimes.length; ti++) {
-        const t = turretSpawnTimes[ti];
-        if (elapsed >= t && elapsed < t + delta) {
-          // Global cap — max 2 live turrets at once
-          const liveTurrets = this.pool.filter(s => s.isTurret).length;
-          if (liveTurrets >= 2) break;
-          const turret = spawnTurret(ti);
-          // Max 2 turrets per X zone (zone band = 12% of play width)
-          const zoneBand = PLAY_W * 0.12;
-          const zoneCount = this.pool.filter(s => s.isTurret && Math.abs(s.x - turret.x) < zoneBand).length;
-          if (zoneCount < 2) {
-            this.pool.push(turret);
-            turretIndicators.spawn(turret.x);
+      // Turret spawning — fixed schedule within the stage
+      const turretInterval = STAGE_CONFIG[stage.current - 1].turretInterval;
+      if (turretInterval > 0) {
+        const elapsed = STAGE_DURATION - stage.timer;
+        const turretSpawnTimes = TURRET_SPAWN_SCHEDULES[stage.current] || [];
+        for (let ti = 0; ti < turretSpawnTimes.length; ti++) {
+          const t = turretSpawnTimes[ti];
+          if (elapsed >= t && elapsed < t + delta) {
+            const liveTurrets = this.pool.filter(s => s.isTurret).length;
+            if (liveTurrets >= 2) break;
+            const turret = spawnTurret(ti);
+            const zoneBand = PLAY_W * 0.12;
+            const zoneCount = this.pool.filter(s => s.isTurret && Math.abs(s.x - turret.x) < zoneBand).length;
+            if (zoneCount < 2) {
+              this.pool.push(turret);
+              turretIndicators.spawn(turret.x);
+            }
+          }
+        }
+      }
+
+      // Formation spawning
+      const fCfg = STAGE_CONFIG[stage.current - 1];
+      if (fCfg.formationChance > 0) {
+        this.formationTimer += delta;
+        if (this.formationCooldown > 0) this.formationCooldown -= delta;
+        if (this.formationTimer >= fCfg.formationInterval && this.formationCooldown <= 0) {
+          this.formationTimer = 0;
+          spawnFormation();
+        }
+      }
+
+      // Shield drone spawning — fixed schedule per stage
+      const shieldDroneSpawnTimes = SHIELD_DRONE_SPAWN_SCHEDULES[stage.current] || [];
+      if (shieldDroneSpawnTimes.length > 0) {
+        const elapsed = STAGE_DURATION - stage.timer;
+        for (let i = 0; i < shieldDroneSpawnTimes.length; i++) {
+          const t = shieldDroneSpawnTimes[i];
+          if (elapsed >= t && elapsed < t + delta) {
+            const activeDrones = this.pool.filter(s => s.isShieldDrone).length;
+            if (activeDrones < 2) this.pool.push(spawnShieldDrone());
           }
         }
       }
     }
     turretIndicators.update(delta);
 
-    // Formation spawning
-    const fCfg = STAGE_CONFIG[stage.current - 1];
-    if (fCfg.formationChance > 0) {
-      this.formationTimer += delta;
-      if (this.formationCooldown > 0) this.formationCooldown -= delta;
-      if (this.formationTimer >= fCfg.formationInterval && this.formationCooldown <= 0) {
-        this.formationTimer = 0;
-        spawnFormation();
-      }
-    }
-
-    // Shield drone spawning — fixed schedule per stage
-    const shieldDroneSpawnTimes = SHIELD_DRONE_SPAWN_SCHEDULES[stage.current] || [];
-    if (shieldDroneSpawnTimes.length > 0) {
-      const elapsed = STAGE_DURATION - stage.timer;
-      for (let i = 0; i < shieldDroneSpawnTimes.length; i++) {
-        const t = shieldDroneSpawnTimes[i];
-        if (elapsed >= t && elapsed < t + delta) {
-          const activeDrones = this.pool.filter(s => s.isShieldDrone).length;
-          if (activeDrones < 2) this.pool.push(spawnShieldDrone());
-        }
-      }
-    }
-
     this.pool = this.pool.filter(s => {
+      if (s.isGatePiece) {
+        s.y += s.vy * dt;
+        if (s.flashTimer > 0) s.flashTimer -= delta;
+        if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
+        if (s.lifetime !== undefined) s.lifetime -= delta;
+        return s.y < PLAY_Y + PLAY_H + 80 && (s.lifetime === undefined || s.lifetime > 0);
+      }
+
       // Formation delay — freeze shard in place until delay expires
       if (s.formationDelayActive) {
         s.formationDelay -= delta;
@@ -753,6 +825,58 @@ const shards = {
     this.pool.forEach(s => {
       ctx.save();
       ctx.translate(s.x, s.y);
+      if (s.isGatePiece) {
+        const gateColor = s.flashTimer > 0 ? '#ffffff' : s.color;
+        const w = s.gateWidth;
+        const h = s.gateHeight;
+        const t = getNow() * 0.018 + s.x * 0.01;
+        const edgeColor = s.isGateTarget ? '#ffd6df' : '#dfe5ff';
+        const accentColor = s.isGateTarget ? '#ff294f' : '#9fc4ff';
+        const bodyColor = s.isGateTarget ? '#25070f' : '#0d1222';
+        const fillAlpha = s.isGateTarget ? 0.28 : 0.14;
+
+        ctx.globalAlpha = fillAlpha;
+        setGlow(gateColor, s.isGateTarget ? 20 : 8);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+
+        ctx.globalAlpha = s.isGateTarget ? 0.9 : 0.55;
+        ctx.strokeStyle = edgeColor;
+        ctx.lineWidth = s.isGateTarget ? 1.5 : 1;
+        ctx.strokeRect(-w * 0.5, -h * 0.5, w, h);
+
+        ctx.globalAlpha = s.isGateTarget ? 0.9 : 0.5;
+        ctx.fillStyle = accentColor;
+        ctx.fillRect(-w * 0.5, -h * 0.5, w, 2);
+        ctx.fillRect(-w * 0.5, h * 0.5 - 2, w, 2);
+
+        ctx.beginPath();
+        const points = 7;
+        for (let i = 0; i <= points; i++) {
+          const px = -w * 0.5 + (w / points) * i;
+          const py = Math.sin(t + i * 0.95) * (h * (s.isGateTarget ? 0.18 : 0.12));
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.globalAlpha = s.isGateTarget ? 0.95 : 0.55;
+        setGlow(accentColor, s.isGateTarget ? 14 : 8);
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = s.isGateTarget ? 2.2 : 1.4;
+        ctx.stroke();
+
+        if (s.isGateTarget) {
+          ctx.globalAlpha = 0.16;
+          ctx.fillStyle = accentColor;
+          ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = '#fff7fa';
+          ctx.fillRect(-w * 0.01, -h * 0.32, w * 0.02, h * 0.64);
+        }
+        clearGlow();
+        ctx.restore();
+        return;
+      }
       const isKamikaze = !!s.isKamikaze;
       const facingAngle = isKamikaze ? Math.atan2(s.vy, s.vx) : s.angle;
       ctx.rotate(facingAngle);
@@ -1200,6 +1324,14 @@ function circlesTouch(ax, ay, ar, bx, by, br) {
   return dx * dx + dy * dy < (ar + br) * (ar + br);
 }
 
+function rectCircleTouch(cx, cy, cr, rx, ry, rw, rh) {
+  const closestX = clamp(cx, rx - rw * 0.5, rx + rw * 0.5);
+  const closestY = clamp(cy, ry - rh * 0.5, ry + rh * 0.5);
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  return dx * dx + dy * dy < cr * cr;
+}
+
 function applyDamageToShard(s, damage, options = {}) {
   if (s.isShieldProtected && !options.bypassShield) {
     impactFX.onHit(s.x, s.y, '#00ccff');
@@ -1241,6 +1373,7 @@ function destroyShard(s) {
   smokeParticles.spawn(s.x, s.y, s.color);
   const idx = shards.pool.indexOf(s);
   if (idx >= 0) shards.pool.splice(idx, 1);
+  if (s.isGatePiece) return;
   const scoreVal = stage.onKill(s);
   const chainColor = player.chain >= 75 ? '#ffffff'
     : player.chain >= 50 ? '#ff33cc'
@@ -1278,7 +1411,17 @@ function checkCollisions() {
     for (let i = shards.pool.length - 1; i >= 0; i--) {
       const s = shards.pool[i];
       const hitR = s.isTurret ? s.size * 2.5 : s.isShieldDrone ? s.size * 3.0 : s.size * 0.75;
-      if (circlesTouch(b.x, b.y, b.hitRadius || 8, s.x, s.y, hitR)) {
+      const bulletHit = s.isGatePiece
+        ? rectCircleTouch(b.x, b.y, b.hitRadius || 8, s.x, s.y, s.gateWidth, s.gateHeight)
+        : circlesTouch(b.x, b.y, b.hitRadius || 8, s.x, s.y, hitR);
+      if (bulletHit) {
+        if (s.isGateBlocker) {
+          s.flashTimer = 70;
+          hitSparks.emit(b.x, b.y, 1, 0, '#f4f3ff');
+          impactFX.onHit(b.x, b.y, '#f4f3ff');
+          bulletAlive = false;
+          break;
+        }
         const shielded = s.shieldHp > 0;
         const killed = applyDamageToShard(s, b.damage || player.effectiveDamage);
         hitSparks.emit(b.x, b.y, 1, 0, shielded ? '#9be7ff' : s.color);
@@ -1308,7 +1451,14 @@ function checkCollisions() {
   for (let i = shards.pool.length - 1; i >= 0; i--) {
     const s = shards.pool[i];
     const bodyR = s.isTurret ? s.size * 2.5 : s.size * 0.75;
-    if (circlesTouch(s.x, s.y, bodyR, drone.x, drone.y, 14)) {
+    const playerHit = s.isGatePiece
+      ? rectCircleTouch(drone.x, drone.y, 14, s.x, s.y, s.gateWidth, s.gateHeight)
+      : circlesTouch(s.x, s.y, bodyR, drone.x, drone.y, 14);
+    if (playerHit) {
+      if (s.isGatePiece) {
+        player.hit();
+        continue;
+      }
       if (dash.duration > 0) {
         dash.hitEnemy = true;
         hitSparks.emit(s.x, s.y, -1, 0, COLOR_CYAN);

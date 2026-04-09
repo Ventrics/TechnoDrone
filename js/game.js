@@ -77,16 +77,22 @@ window.addEventListener('keydown', e => {
 let lastTime = 0;
 let stage10WipeProgress = 0;
 let _negativeSpaceBackdrop = null;
+let _negativeSpaceBackdropActive = null;
 let _negativeSpaceBackdropW = 0;
 let _negativeSpaceBackdropH = 0;
+let _negativeSpaceFlowGlow = 0;
 
 function _buildNegativeSpaceBackdrop() {
   const bg = document.createElement('canvas');
+  const active = document.createElement('canvas');
   bg.width = canvas.width;
   bg.height = canvas.height;
+  active.width = canvas.width;
+  active.height = canvas.height;
   const bctx = bg.getContext('2d');
+  const actx = active.getContext('2d');
 
-  bctx.fillStyle = '#05060c';
+  bctx.fillStyle = '#030406';
   bctx.fillRect(0, 0, bg.width, bg.height);
 
   bctx.save();
@@ -95,58 +101,73 @@ function _buildNegativeSpaceBackdrop() {
   bctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
   bctx.clip('evenodd');
 
-  const wash = bctx.createLinearGradient(0, 0, bg.width, bg.height);
-  wash.addColorStop(0, 'rgba(0,8,64,0.8)');
-  wash.addColorStop(0.35, 'rgba(46,59,240,0.08)');
-  wash.addColorStop(0.68, 'rgba(221,50,179,0.08)');
-  wash.addColorStop(1, 'rgba(5,6,12,0.9)');
+  const wash = bctx.createRadialGradient(
+    bg.width * 0.5, bg.height * 0.45, 0,
+    bg.width * 0.5, bg.height * 0.45, Math.max(bg.width, bg.height) * 0.85
+  );
+  wash.addColorStop(0, 'rgba(72,76,84,0.22)');
+  wash.addColorStop(0.45, 'rgba(28,30,36,0.14)');
+  wash.addColorStop(1, 'rgba(3,4,6,0.94)');
   bctx.fillStyle = wash;
   bctx.fillRect(0, 0, bg.width, bg.height);
 
-  const dotColors = [
-    'rgba(251,41,253,0.78)',
-    'rgba(221,50,179,0.72)',
-    'rgba(66,22,210,0.72)',
-    'rgba(46,59,240,0.8)',
-    'rgba(255,255,255,0.62)',
-  ];
+  actx.save();
+  actx.beginPath();
+  actx.rect(0, 0, active.width, active.height);
+  actx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  actx.clip('evenodd');
 
-  const spacing = 86;
-  for (let y = 24; y < bg.height; y += spacing) {
-    for (let x = 18; x < bg.width; x += spacing) {
-      if (x > PLAY_X - 40 && x < PLAY_X + PLAY_W + 40 && y > PLAY_Y - 40 && y < PLAY_Y + PLAY_H + 40) {
+  const spacing = 20;
+  for (let y = 8; y < active.height; y += spacing) {
+    for (let x = 8; x < active.width; x += spacing) {
+      if (x > PLAY_X && x < PLAY_X + PLAY_W && y > PLAY_Y && y < PLAY_Y + PLAY_H) {
         continue;
       }
-      const idx = ((x / spacing) + (y / spacing)) % dotColors.length | 0;
-      const radius = 1.6 + (((x + y) / spacing) % 3) * 0.45;
+      const t = Math.max(0, Math.min(1, (x / active.width) * 0.58 + (y / active.height) * 0.42));
+      const r = Math.round(154 + (115 - 154) * t);
+      const g = Math.round(102 + (44 - 102) * t);
+      const b = Math.round(255 + (230 - 255) * t);
+      const color = `rgba(${r},${g},${b},0.88)`;
+      const idleColor = `rgba(${Math.round(r * 0.38)},${Math.round(g * 0.34)},${Math.round(b * 0.42)},0.28)`;
+      const radius = 1.05 + (((x + y) / spacing) % 3) * 0.28;
       bctx.save();
-      bctx.shadowColor = dotColors[idx];
-      bctx.shadowBlur = 12;
-      bctx.fillStyle = dotColors[idx];
+      bctx.shadowColor = idleColor;
+      bctx.shadowBlur = 4;
+      bctx.fillStyle = idleColor;
       bctx.beginPath();
-      bctx.arc(x, y, radius, 0, Math.PI * 2);
+      bctx.arc(x, y, radius * 0.9, 0, Math.PI * 2);
       bctx.fill();
       bctx.restore();
+      actx.save();
+      actx.shadowColor = color;
+      actx.shadowBlur = 14;
+      actx.fillStyle = color;
+      actx.beginPath();
+      actx.arc(x, y, radius, 0, Math.PI * 2);
+      actx.fill();
+      actx.restore();
     }
   }
 
   const orbA = bctx.createRadialGradient(PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 0, PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 260);
-  orbA.addColorStop(0, 'rgba(46,59,240,0.18)');
-  orbA.addColorStop(0.55, 'rgba(66,22,210,0.08)');
-  orbA.addColorStop(1, 'rgba(46,59,240,0)');
+  orbA.addColorStop(0, 'rgba(96,98,108,0.11)');
+  orbA.addColorStop(0.55, 'rgba(96,98,108,0.04)');
+  orbA.addColorStop(1, 'rgba(96,98,108,0)');
   bctx.fillStyle = orbA;
   bctx.fillRect(0, 0, bg.width, bg.height);
 
   const orbB = bctx.createRadialGradient(PLAY_X + PLAY_W + 150, PLAY_Y + PLAY_H * 0.62, 0, PLAY_X + PLAY_W + 150, PLAY_Y + PLAY_H * 0.62, 300);
-  orbB.addColorStop(0, 'rgba(251,41,253,0.17)');
-  orbB.addColorStop(0.5, 'rgba(221,50,179,0.08)');
-  orbB.addColorStop(1, 'rgba(251,41,253,0)');
+  orbB.addColorStop(0, 'rgba(82,84,92,0.12)');
+  orbB.addColorStop(0.5, 'rgba(82,84,92,0.05)');
+  orbB.addColorStop(1, 'rgba(82,84,92,0)');
   bctx.fillStyle = orbB;
   bctx.fillRect(0, 0, bg.width, bg.height);
 
   bctx.restore();
+  actx.restore();
 
   _negativeSpaceBackdrop = bg;
+  _negativeSpaceBackdropActive = active;
   _negativeSpaceBackdropW = canvas.width;
   _negativeSpaceBackdropH = canvas.height;
 }
@@ -156,9 +177,30 @@ function _drawNegativeSpaceBackdrop() {
     _buildNegativeSpaceBackdrop();
   }
   ctx.drawImage(_negativeSpaceBackdrop, 0, 0);
+  if (_negativeSpaceBackdropActive && _negativeSpaceFlowGlow > 0.001) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, canvas.height);
+    ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+    ctx.clip('evenodd');
+    const cx = PLAY_X + PLAY_W * 0.5;
+    const cy = PLAY_Y + PLAY_H * 0.5;
+    const maxR = Math.hypot(Math.max(cx, canvas.width - cx), Math.max(cy, canvas.height - cy));
+    const waveR = maxR * Math.max(0.001, _negativeSpaceFlowGlow);
+    ctx.beginPath();
+    ctx.arc(cx, cy, waveR, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = _negativeSpaceFlowGlow * 0.82;
+    ctx.drawImage(_negativeSpaceBackdropActive, 0, 0);
+    ctx.restore();
+  }
 }
 
 function update(delta) {
+  const backdropTarget = (gameState === 'playing' && !player.dead && player.flowStateActive) ? 1 : 0;
+  const glowRate = delta / (backdropTarget > _negativeSpaceFlowGlow ? 260 : 420);
+  _negativeSpaceFlowGlow += (backdropTarget - _negativeSpaceFlowGlow) * Math.min(1, glowRate);
+
   if (gameState === 'title') { updateTitle(delta); return; }
   if (gameState === 'leaderboard') { leaderboard.update(delta); return; }
   if (gameState === 'win') {

@@ -444,7 +444,7 @@ const pickups = {
       const dx = drone.x - orb.x;
       const dy = drone.y - orb.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 250) orb.phase = 'pull';
+      orb.phase = 'pull';
       if (dist > 0) {
         const speed = orb.phase === 'pull' ? 600 : 60;
         orb.x += (dx / dist) * speed * dt;
@@ -452,7 +452,10 @@ const pickups = {
       }
       if (dist < 25) {
         if (player.altFireType === 'spread') {
-          player.spreadFuel = player.SPREAD_MAX_FUEL;
+          player.spreadFuel = Math.min(
+            player.SPREAD_MAX_FUEL,
+            player.spreadFuel + player.SPREAD_MAX_FUEL * 0.15
+          );
           streakCallout.showAltFire('spread');
         } else {
           player.activateAltFire(orb.type);

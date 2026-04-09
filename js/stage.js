@@ -12,6 +12,7 @@ function getActiveMechanics() {
 function getEnemyScoreValue(enemy) {
   if (!enemy) return 10;
   if (typeof enemy === 'boolean') return enemy ? 50 : 10;
+  if (enemy.isGatePiece) return 0;
   if (enemy.isElite) return 50;
 
   const size = enemy.size || 14;
@@ -37,8 +38,19 @@ const stage = {
   labelScale: 1,
   chainBreakFlash: 0,
   chainBreakCount: 0,
+  obstacleActive: false,
+  obstacleTimer: 0,
+  obstacleTransitionTimer: 0,
+  obstacleSpawnTimer: 0,
+  obstacleRowsSpawned: 0,
+  obstacleTriggered: false,
+  OBSTACLE_TRIGGER_AT: 20000,
+  OBSTACLE_DURATION: 5000,
+  OBSTACLE_TRANSITION_MS: 500,
+  OBSTACLE_ROW_INTERVAL: 900,
 
   onKill(enemy, fromNuke = false) {
+    if (enemy && enemy.isGatePiece) return 0;
     const isElite = !!(typeof enemy === 'boolean' ? enemy : enemy?.isElite);
     const scoreValue = getEnemyScoreValue(enemy);
     this.kills++;
@@ -84,7 +96,35 @@ const stage = {
     }
   },
 
+  _isObstacleStage() {
+    return this.current === 3 || this.current === 6 || this.current === 9;
+  },
+
+  _startObstacleWave() {
+    this.obstacleActive = true;
+    this.obstacleTimer = this.OBSTACLE_DURATION;
+    this.obstacleTransitionTimer = this.OBSTACLE_TRANSITION_MS;
+    this.obstacleSpawnTimer = 0;
+    this.obstacleRowsSpawned = 0;
+    this.obstacleTriggered = true;
+
+    streakCallout.show('SHOOT RED', '#ff4a4a', 1700, 2.6, 'center');
+    streakCallout.show('DASH THE GAP', '#31afd4', 1700, 2.1, 'top');
+    if (typeof spawnObstacleGateRow === 'function') {
+      spawnObstacleGateRow(this.obstacleRowsSpawned++);
+    }
+  },
+
+  _endObstacleWave() {
+    this.obstacleActive = false;
+    this.obstacleTimer = 0;
+    this.obstacleTransitionTimer = 0;
+    this.obstacleSpawnTimer = 0;
+    this.obstacleRowsSpawned = 0;
+  },
+
   _advance() {
+    this._endObstacleWave();
     if (this.current === 10) {
       shards.reset();
       bullets.pool = [];
@@ -128,6 +168,7 @@ const stage = {
     this.shakeIntensity = 4;
     this.slowmoTimer = 0;
     this.labelScale = 2.0;
+    this.obstacleTriggered = false;
   },
 
   update(delta) {
@@ -140,6 +181,25 @@ const stage = {
     if (this.slowmoTimer > 0) this.slowmoTimer -= delta;
 
     if (gameState === 'playing') {
+      const elapsed = STAGE_DURATION - this.timer;
+      if (!this.obstacleActive && !this.obstacleTriggered && this._isObstacleStage() && elapsed >= this.OBSTACLE_TRIGGER_AT) {
+        this._startObstacleWave();
+      }
+
+      if (this.obstacleActive) {
+        this.obstacleTimer -= delta;
+        if (this.obstacleTransitionTimer > 0) this.obstacleTransitionTimer -= delta;
+        this.obstacleSpawnTimer += delta;
+        if (this.obstacleRowsSpawned < 5 && this.obstacleSpawnTimer >= this.OBSTACLE_ROW_INTERVAL) {
+          this.obstacleSpawnTimer = 0;
+          if (typeof spawnObstacleGateRow === 'function') {
+            spawnObstacleGateRow(this.obstacleRowsSpawned++);
+          }
+        }
+        if (this.obstacleTimer <= 0) {
+          this._endObstacleWave();
+        }
+      }
       this.timer -= delta;
       if (this.timer <= 0) this._advance();
     }
@@ -171,6 +231,12 @@ const stage = {
     this.labelScale = 1;
     this.chainBreakFlash = 0;
     this.chainBreakCount = 0;
+    this.obstacleActive = false;
+    this.obstacleTimer = 0;
+    this.obstacleTransitionTimer = 0;
+    this.obstacleSpawnTimer = 0;
+    this.obstacleRowsSpawned = 0;
+    this.obstacleTriggered = false;
     COLOR_BG = STAGE_BG_COLORS[0];
     mechanicAssignment = buildMechanicAssignment();
   }
