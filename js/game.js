@@ -3,6 +3,8 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     paused = !paused;
     pauseSel = 0;
+    if (paused && screenNuke.active) audio.stopLoop('bassPulseLoop');
+    if (typeof pixiPost !== 'undefined') pixiPost.setPaused(paused);
   }
   if (!paused) return;
   
@@ -16,53 +18,15 @@ window.addEventListener('keydown', e => {
   }
   
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') {
-      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
-      vol = Math.max(0, vol - 5);
-      localStorage.setItem('drone_music_vol', vol.toString());
-      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
-      audio.setMusicVolume(vol / 100);
-      audio.play('menuSelect');
-    }
+    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') _adjustPauseMusicVolume(-5);
   }
   
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') {
-      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
-      vol = Math.min(100, vol + 5);
-      localStorage.setItem('drone_music_vol', vol.toString());
-      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
-      audio.setMusicVolume(vol / 100);
-      audio.play('menuSelect');
-    }
+    if (PAUSE_ITEMS[pauseSel] === 'MUSIC VOL') _adjustPauseMusicVolume(5);
   }
 
   if (e.key === 'Enter') {
-    audio.play('menuConfirm');
-    const selItem = PAUSE_ITEMS[pauseSel];
-    if (selItem === 'RESUME') { 
-      paused = false; 
-    }
-    if (selItem === 'SFX') { 
-      let on = localStorage.getItem('drone_sfx_on') !== '0';
-      on = !on;
-      localStorage.setItem('drone_sfx_on', on ? '1' : '0');
-      audio.setSfxVolume(on ? 1.0 : 0);
-    }
-    if (selItem === 'MUSIC VOL') { 
-      let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
-      vol = vol > 0 ? 0 : 10;
-      localStorage.setItem('drone_music_vol', vol.toString());
-      localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
-      audio.setMusicVolume(vol / 100);
-    }
-    if (selItem === 'HOME') { 
-      paused = false; 
-      pauseSel = 0; 
-      gameState = 'title'; 
-      audio.playMusic('title'); 
-      delete justPressed['Enter']; 
-    }
+    _activatePauseItem(pauseSel);
   }
 });
 
@@ -81,6 +45,173 @@ let _negativeSpaceBackdropActive = null;
 let _negativeSpaceBackdropW = 0;
 let _negativeSpaceBackdropH = 0;
 let _negativeSpaceFlowGlow = 0;
+let missionCompleteSequence = {
+  startedAt: 0,
+  heroX: 0,
+};
+
+function _setTitleWordmarkVisible(visible) {
+  if (typeof pixiPost !== 'undefined' && typeof pixiPost.setTitleWordmark === 'function') {
+    pixiPost.setTitleWordmark(visible);
+  }
+}
+
+function _drawNearDeathVignette() {
+  if (!(player.lives === 1 && !player.dead)) return;
+
+  const now = getNow();
+  const pulse = 0.55 + 0.45 * (Math.sin(now * 0.0105) * 0.5 + 0.5);
+  const edgeAlpha = 0.075 + pulse * 0.045;
+  const innerAlpha = 0.022 + pulse * 0.014;
+  const glowSize = Math.max(34, Math.min(68, PLAY_W * 0.11));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  ctx.clip();
+
+  const left = ctx.createLinearGradient(PLAY_X, 0, PLAY_X + glowSize, 0);
+  left.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha})`);
+  left.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.45})`);
+  left.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  ctx.fillStyle = left;
+  ctx.fillRect(PLAY_X, PLAY_Y, glowSize, PLAY_H);
+
+  const right = ctx.createLinearGradient(PLAY_X + PLAY_W, 0, PLAY_X + PLAY_W - glowSize, 0);
+  right.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha})`);
+  right.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.45})`);
+  right.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  ctx.fillStyle = right;
+  ctx.fillRect(PLAY_X + PLAY_W - glowSize, PLAY_Y, glowSize, PLAY_H);
+
+  const top = ctx.createLinearGradient(0, PLAY_Y, 0, PLAY_Y + glowSize);
+  top.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha * 0.9})`);
+  top.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.38})`);
+  top.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  ctx.fillStyle = top;
+  ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, glowSize);
+
+  const bottom = ctx.createLinearGradient(0, PLAY_Y + PLAY_H, 0, PLAY_Y + PLAY_H - glowSize);
+  bottom.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha * 0.9})`);
+  bottom.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.38})`);
+  bottom.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  ctx.fillStyle = bottom;
+  ctx.fillRect(PLAY_X, PLAY_Y + PLAY_H - glowSize, PLAY_W, glowSize);
+
+  // Very soft interior pressure so the warning state breathes without boxing the field in.
+  const centerX = PLAY_X + PLAY_W * 0.5;
+  const centerY = PLAY_Y + PLAY_H * 0.5;
+  const well = ctx.createRadialGradient(centerX, centerY, PLAY_W * 0.28, centerX, centerY, PLAY_W * 0.68);
+  well.addColorStop(0, 'rgba(0,0,0,0)');
+  well.addColorStop(0.72, `rgba(120, 14, 28, ${innerAlpha})`);
+  well.addColorStop(1, `rgba(152, 18, 36, ${innerAlpha * 1.7})`);
+  ctx.fillStyle = well;
+  ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+
+  ctx.restore();
+}
+
+function _drawPlayfieldFog() {
+  const now = getNow();
+  const cx = PLAY_X + PLAY_W * 0.5;
+  const cy = PLAY_Y + PLAY_H * 0.5;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  ctx.clip();
+
+  const pools = [
+    {
+      x: cx + Math.sin(now * 0.00023) * PLAY_W * 0.12,
+      y: cy - PLAY_H * 0.16 + Math.cos(now * 0.00019) * PLAY_H * 0.08,
+      r: PLAY_W * 0.34,
+      alpha: 0.048,
+      color: 'rgba(210,240,255,',
+    },
+    {
+      x: PLAY_X + PLAY_W * 0.22 + Math.cos(now * 0.00017 + 1.4) * PLAY_W * 0.09,
+      y: PLAY_Y + PLAY_H * 0.72 + Math.sin(now * 0.00021 + 0.7) * PLAY_H * 0.07,
+      r: PLAY_W * 0.28,
+      alpha: 0.034,
+      color: 'rgba(180,220,235,',
+    },
+    {
+      x: PLAY_X + PLAY_W * 0.8 + Math.sin(now * 0.00014 + 2.1) * PLAY_W * 0.08,
+      y: PLAY_Y + PLAY_H * 0.34 + Math.cos(now * 0.00016 + 0.9) * PLAY_H * 0.09,
+      r: PLAY_W * 0.24,
+      alpha: 0.026,
+      color: 'rgba(245,250,255,',
+    },
+  ];
+
+  pools.forEach(pool => {
+    const grad = ctx.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, pool.r);
+    grad.addColorStop(0, `${pool.color}${pool.alpha})`);
+    grad.addColorStop(0.42, `${pool.color}${pool.alpha * 0.45})`);
+    grad.addColorStop(1, `${pool.color}0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(pool.x - pool.r, pool.y - pool.r, pool.r * 2, pool.r * 2);
+  });
+
+  const topHaze = ctx.createLinearGradient(0, PLAY_Y, 0, PLAY_Y + PLAY_H * 0.28);
+  topHaze.addColorStop(0, 'rgba(235,245,255,0.018)');
+  topHaze.addColorStop(1, 'rgba(235,245,255,0)');
+  ctx.fillStyle = topHaze;
+  ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H * 0.28);
+
+  ctx.restore();
+}
+
+function _setPixiNativeLayer(layerName, enabled) {
+  if (typeof pixiPost === 'undefined' || typeof pixiPost.setNativeLayerEnabled !== 'function') return;
+  pixiPost.setNativeLayerEnabled(layerName, enabled);
+}
+
+function _isPixiNativeLayerEnabled(layerName) {
+  return typeof pixiPost !== 'undefined' &&
+    typeof pixiPost.isNativeLayerEnabled === 'function' &&
+    pixiPost.isNativeLayerEnabled(layerName);
+}
+
+function _syncPixiLayerModes() {
+  _setPixiNativeLayer('bg', false);
+  _setPixiNativeLayer('particles', false);
+  _setPixiNativeLayer('entities', false);
+  _setPixiNativeLayer('player', false);
+  _setPixiNativeLayer('fx', false);
+  _setPixiNativeLayer('hud', false);
+}
+
+function beginMissionCompleteSequence() {
+  gameState = 'finale';
+  paused = false;
+  stage10WipeProgress = 1;
+}
+
+function startMissionCompleteScreen() {
+  startScreenTransition('pixelate', () => {
+    bullets.pool = [];
+    bullets.cooldown = 0;
+    enemyBullets.reset();
+    pickups.reset();
+    screenNuke.reset();
+    dash.reset();
+    player.altFireType = null;
+    player.laserFuel = 0;
+    player.flowStateActive = false;
+    player.flowStateTimer = 0;
+    player.flowStateCharge = player.FLOW_STATE_MAX;
+    pixiPost.setFlowState(false);
+    pixiPost.setNearDeath(false);
+    gameState = 'win';
+    endScreenSelection = 0;
+    endScreenSelectionChangedAt = getNow();
+    missionCompleteSequence.startedAt = getNow();
+    missionCompleteSequence.heroX = PLAY_X + PLAY_W * 0.5;
+    audio.playMusic('win');
+  });
+}
 
 function _buildNegativeSpaceBackdrop() {
   const bg = document.createElement('canvas');
@@ -92,6 +223,7 @@ function _buildNegativeSpaceBackdrop() {
   const bctx = bg.getContext('2d');
   const actx = active.getContext('2d');
 
+  // Base background
   bctx.fillStyle = '#030406';
   bctx.fillRect(0, 0, bg.width, bg.height);
 
@@ -111,44 +243,6 @@ function _buildNegativeSpaceBackdrop() {
   bctx.fillStyle = wash;
   bctx.fillRect(0, 0, bg.width, bg.height);
 
-  actx.save();
-  actx.beginPath();
-  actx.rect(0, 0, active.width, active.height);
-  actx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-  actx.clip('evenodd');
-
-  const spacing = 20;
-  for (let y = 8; y < active.height; y += spacing) {
-    for (let x = 8; x < active.width; x += spacing) {
-      if (x > PLAY_X && x < PLAY_X + PLAY_W && y > PLAY_Y && y < PLAY_Y + PLAY_H) {
-        continue;
-      }
-      const t = Math.max(0, Math.min(1, (x / active.width) * 0.58 + (y / active.height) * 0.42));
-      const r = Math.round(154 + (115 - 154) * t);
-      const g = Math.round(102 + (44 - 102) * t);
-      const b = Math.round(255 + (230 - 255) * t);
-      const color = `rgba(${r},${g},${b},0.88)`;
-      const idleColor = `rgba(${Math.round(r * 0.38)},${Math.round(g * 0.34)},${Math.round(b * 0.42)},0.28)`;
-      const radius = 1.05 + (((x + y) / spacing) % 3) * 0.28;
-      bctx.save();
-      bctx.shadowColor = idleColor;
-      bctx.shadowBlur = 4;
-      bctx.fillStyle = idleColor;
-      bctx.beginPath();
-      bctx.arc(x, y, radius * 0.9, 0, Math.PI * 2);
-      bctx.fill();
-      bctx.restore();
-      actx.save();
-      actx.shadowColor = color;
-      actx.shadowBlur = 14;
-      actx.fillStyle = color;
-      actx.beginPath();
-      actx.arc(x, y, radius, 0, Math.PI * 2);
-      actx.fill();
-      actx.restore();
-    }
-  }
-
   const orbA = bctx.createRadialGradient(PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 0, PLAY_X - 120, PLAY_Y + PLAY_H * 0.32, 260);
   orbA.addColorStop(0, 'rgba(96,98,108,0.11)');
   orbA.addColorStop(0.55, 'rgba(96,98,108,0.04)');
@@ -164,6 +258,47 @@ function _buildNegativeSpaceBackdrop() {
   bctx.fillRect(0, 0, bg.width, bg.height);
 
   bctx.restore();
+
+  // Active canvas: border bloom + behind-playfield radiance — pre-rendered once, clipped outside playfield
+  actx.save();
+  actx.beginPath();
+  actx.rect(0, 0, active.width, active.height);
+  actx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  actx.clip('evenodd');
+
+  // Playfield border bloom — stroke with shadow bleeding outward into side panels
+  actx.shadowColor = 'rgba(120, 55, 255, 1.0)';
+  actx.shadowBlur = 55;
+  actx.strokeStyle = 'rgba(140, 75, 255, 0.95)';
+  actx.lineWidth = 2;
+  actx.strokeRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  // Second pass — wider softer halo
+  actx.shadowBlur = 100;
+  actx.strokeStyle = 'rgba(100, 45, 220, 0.50)';
+  actx.lineWidth = 1;
+  actx.strokeRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+
+  const arenaCx = PLAY_X + PLAY_W * 0.5;
+  const arenaCy = PLAY_Y + PLAY_H * 0.5;
+
+  // Single centered backlight source behind the arena.
+  const rearAura = actx.createRadialGradient(arenaCx, arenaCy, PLAY_W * 0.16, arenaCx, arenaCy, PLAY_W * 0.98);
+  rearAura.addColorStop(0, 'rgba(132, 78, 255, 0.46)');
+  rearAura.addColorStop(0.22, 'rgba(116, 56, 242, 0.22)');
+  rearAura.addColorStop(0.48, 'rgba(92, 30, 196, 0.09)');
+  rearAura.addColorStop(0.76, 'rgba(72, 20, 156, 0.035)');
+  rearAura.addColorStop(1, 'rgba(60, 18, 140, 0)');
+  actx.fillStyle = rearAura;
+  actx.fillRect(0, 0, active.width, active.height);
+
+  const outerShell = actx.createRadialGradient(arenaCx, arenaCy, PLAY_W * 0.52, arenaCx, arenaCy, PLAY_W * 1.22);
+  outerShell.addColorStop(0, 'rgba(150, 104, 255, 0.08)');
+  outerShell.addColorStop(0.34, 'rgba(120, 66, 238, 0.055)');
+  outerShell.addColorStop(0.7, 'rgba(92, 38, 196, 0.022)');
+  outerShell.addColorStop(1, 'rgba(88, 38, 196, 0)');
+  actx.fillStyle = outerShell;
+  actx.fillRect(0, 0, active.width, active.height);
+
   actx.restore();
 
   _negativeSpaceBackdrop = bg;
@@ -178,25 +313,17 @@ function _drawNegativeSpaceBackdrop() {
   }
   ctx.drawImage(_negativeSpaceBackdrop, 0, 0);
   if (_negativeSpaceBackdropActive && _negativeSpaceFlowGlow > 0.001) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, canvas.width, canvas.height);
-    ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-    ctx.clip('evenodd');
-    const cx = PLAY_X + PLAY_W * 0.5;
-    const cy = PLAY_Y + PLAY_H * 0.5;
-    const maxR = Math.hypot(Math.max(cx, canvas.width - cx), Math.max(cy, canvas.height - cy));
-    const waveR = maxR * Math.max(0.001, _negativeSpaceFlowGlow);
-    ctx.beginPath();
-    ctx.arc(cx, cy, waveR, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.globalAlpha = _negativeSpaceFlowGlow * 0.82;
+    // Breathing: slow sin oscillation modulates intensity when fully active
+    const breathe = 0.08 * Math.sin(Date.now() * 0.0018) * _negativeSpaceFlowGlow;
+    ctx.globalAlpha = Math.max(0, Math.min(1, _negativeSpaceFlowGlow * 0.92 + breathe));
     ctx.drawImage(_negativeSpaceBackdropActive, 0, 0);
-    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 }
 
 function update(delta) {
+  _syncPixiLayerModes();
+
   const backdropTarget = (gameState === 'playing' && !player.dead && player.flowStateActive) ? 1 : 0;
   const glowRate = delta / (backdropTarget > _negativeSpaceFlowGlow ? 260 : 420);
   _negativeSpaceFlowGlow += (backdropTarget - _negativeSpaceFlowGlow) * Math.min(1, glowRate);
@@ -205,7 +332,11 @@ function update(delta) {
   if (gameState === 'leaderboard') { leaderboard.update(delta); return; }
   if (gameState === 'win') {
     starField.update(delta);
-    drone.update(delta);
+    const winMove = ((keys['ArrowLeft'] || keys['a'] || keys['A']) ? -1 : 0) +
+      ((keys['ArrowRight'] || keys['d'] || keys['D']) ? 1 : 0);
+    const targetX = PLAY_X + PLAY_W * 0.5 + winMove * PLAY_W * 0.16;
+    const currentX = missionCompleteSequence.heroX || (PLAY_X + PLAY_W * 0.5);
+    missionCompleteSequence.heroX = currentX + (targetX - currentX) * Math.min(1, delta / 140);
     return;
   }
   if (paused) { return; }
@@ -263,7 +394,10 @@ function update(delta) {
   impactFX.update(effectiveDelta);
   smokeParticles.update(effectiveDelta);
   pickups.update(effectiveDelta);
-  if (gameState !== 'tutorial') {
+  if (gameState === 'playing') {
+    stage.update(delta);
+    audio.updateMusicIntensity(stage.current);
+  } else if (gameState === 'finale') {
     stage.update(delta);
     audio.updateMusicIntensity(stage.current);
   }
@@ -275,16 +409,41 @@ function update(delta) {
   if (stage.current === 10 && stage10WipeProgress < 1)
     stage10WipeProgress = Math.min(1, stage10WipeProgress + delta / 1500);
 
-  if (tutorialAllowsControl('nuke') && (justPressed['q'] || justPressed['Q'])) screenNuke.fire();
+  if (tutorialAllowsControl('baseDrop') && (justPressed['q'] || justPressed['Q'])) screenNuke.fire();
 }
 
 function render() {
-  if (gameState === 'title') { drawTitleScreen(); return; }
-  if (gameState === 'leaderboard') { leaderboard.draw(); return; }
-  if (gameState === 'win') { drawWinScreen(); return; }
-  if (gameState === 'devMenu') { drawDevMenu(); return; }
+  _syncPixiLayerModes();
+  _setTitleWordmarkVisible(gameState === 'title');
 
-  if (player.dead) {
+  if (gameState === 'title') {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+    drawTitleScreen();
+    return;
+  }
+  if (gameState === 'leaderboard') {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+    leaderboard.draw();
+    return;
+  }
+  if (gameState === 'win') {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+    drawWinScreen();
+    return;
+  }
+  if (gameState === 'devMenu') {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+    drawDevMenu();
+    return;
+  }
+
+  if (player.dead && !player.deathPresentationPending) {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
     if (gameState === 'nameEntry') {
       nameEntry.drawOverlay();
       return;
@@ -299,6 +458,8 @@ function render() {
   // Play area background
   ctx.fillStyle = COLOR_BG;
   ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  starField.draw();
+  _drawPlayfieldFog();
 
   // Play area border
   const stageColorBorder = STAGE_ENEMY_COLORS[Math.min(stage.current - 1, 9)];
@@ -360,7 +521,7 @@ function render() {
   const flowStateSpacing = 30;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = 'bold 38px monospace';
+  ctx.font = `bold 38px ${UI_DISPLAY_FONT}`;
   ctx.globalAlpha = odRailActive ? odRailPulse : 0.86;
   ctx.shadowColor = odRailColor;
   ctx.shadowBlur = odRailActive ? 18 : 12;
@@ -400,54 +561,57 @@ function render() {
 
   }
 
-  // Top entry highlight bar — a slim holographic lane marker that sits just
-  // under the border so enemy spawns feel like they emerge from beneath it.
-  const timeFrac = Math.max(0, Math.min(1, stage.timer / STAGE_DURATION));
-  const timeLeft = Math.max(0, Math.ceil(stage.timer / 1000));
-  const timerUrgent = timeLeft <= 5;
-  const timerWarning = timeLeft <= 10;
-  const timerPulse = timerUrgent ? (0.72 + 0.28 * (Math.sin(getNow() * 0.025) * 0.5 + 0.5)) : 1;
-  const timerColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : stageColorBorder;
-  ctx.save();
-  const topBarInset = Math.max(8, PLAY_W * 0.025);
-  const topBarX = PLAY_X + topBarInset;
-  const topBarY = PLAY_Y + 8;
-  const topBarW = PLAY_W - topBarInset * 2;
-  const topBarH = 7;
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(topBarX, topBarY, topBarW, topBarH);
+  // Top entry highlight bar — hidden in tutorial (no stage progression there)
+  if (gameState !== 'tutorial') {
+  if (gameState !== 'tutorial' && gameState !== 'finale') {
+    const timeFrac = Math.max(0, Math.min(1, stage.timer / STAGE_DURATION));
+    const timeLeft = Math.max(0, Math.ceil(stage.timer / 1000));
+    const timerUrgent = timeLeft <= 5;
+    const timerWarning = timeLeft <= 10;
+    const timerPulse = timerUrgent ? (0.72 + 0.28 * (Math.sin(getNow() * 0.025) * 0.5 + 0.5)) : 1;
+    const timerColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : stageColorBorder;
+    ctx.save();
+    const topBarInset = Math.max(8, PLAY_W * 0.025);
+    const topBarX = PLAY_X + topBarInset;
+    const topBarY = PLAY_Y + 8;
+    const topBarW = PLAY_W - topBarInset * 2;
+    const topBarH = 7;
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(topBarX, topBarY, topBarW, topBarH);
 
-  if (timeFrac > 0) {
-    const fillW = topBarW * timeFrac;
-    ctx.globalAlpha = timerUrgent ? timerPulse : 0.92;
-    ctx.fillStyle = timerColor;
+    if (timeFrac > 0) {
+      const fillW = topBarW * timeFrac;
+      ctx.globalAlpha = timerUrgent ? timerPulse : 0.92;
+      ctx.fillStyle = timerColor;
+      ctx.shadowColor = timerColor;
+      ctx.shadowBlur = timerUrgent ? 16 : 12;
+      ctx.fillRect(topBarX, topBarY, fillW, topBarH);
+    }
+
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowBlur = 0;
+    ctx.fillRect(topBarX + 22, topBarY + 1, Math.max(0, topBarW - 44), 1);
+
+    const nextStageLabel = 'NEXT STAGE';
+    const labelX = topBarX + topBarW * 0.5;
+    const labelY = topBarY - 8;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.font = `bold 17px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = timerUrgent ? 0.98 : 0.82;
     ctx.shadowColor = timerColor;
-    ctx.shadowBlur = timerUrgent ? 16 : 12;
-    ctx.fillRect(topBarX, topBarY, fillW, topBarH);
+    ctx.shadowBlur = timerUrgent ? 20 : 14;
+    ctx.fillStyle = timerColor;
+    ctx.fillText(nextStageLabel, labelX, labelY);
+    ctx.globalAlpha = timerUrgent ? 0.45 : 0.3;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(nextStageLabel, labelX, labelY - 1);
+    ctx.restore();
   }
-
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowBlur = 0;
-  ctx.fillRect(topBarX + 22, topBarY + 1, Math.max(0, topBarW - 44), 1);
-
-  const nextStageLabel = 'NEXT STAGE';
-  const labelX = topBarX + topBarW * 0.5;
-  const labelY = topBarY - 8;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  ctx.font = 'bold 17px monospace';
-  ctx.globalAlpha = timerUrgent ? 0.98 : 0.82;
-  ctx.shadowColor = timerColor;
-  ctx.shadowBlur = timerUrgent ? 20 : 14;
-  ctx.fillStyle = timerColor;
-  ctx.fillText(nextStageLabel, labelX, labelY);
-  ctx.globalAlpha = timerUrgent ? 0.45 : 0.3;
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(nextStageLabel, labelX, labelY - 1);
-  ctx.restore();
+  }
 
   // Bottom flow state bar — mirrors top timer bar
   {
@@ -460,7 +624,7 @@ function render() {
     const altActive = !!player.altFireType;
     const altLabel = 'LASER';
     const altColor = '#39ff14';
-    const altFrac = Math.max(0, player.spreadFuel / player.SPREAD_MAX_FUEL);
+    const altFrac = Math.max(0, player.laserFuel / player.LASER_MAX_FUEL);
     const altPulse = altActive ? (0.76 + 0.24 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5)) : 1;
     const altBarY = botBarY;
     const altLabelY = altBarY - 8;
@@ -488,7 +652,7 @@ function render() {
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      ctx.font = 'bold 17px monospace';
+      ctx.font = `bold 17px ${UI_DISPLAY_FONT}`;
       ctx.globalAlpha = 0.88;
       ctx.shadowColor = altColor;
       ctx.shadowBlur = 18;
@@ -502,19 +666,14 @@ function render() {
 
     ctx.restore();
   }
-
-  starField.draw();
-
   // Clip all game entities to the play area
   ctx.save();
   ctx.beginPath();
   ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
   ctx.clip();
 
-  if (gameState !== 'tutorial' && stage.shakeTimer > 0 && stage.shakeIntensity > 0) {
-    const sx = (Math.random() * 2 - 1) * stage.shakeIntensity;
-    const sy = (Math.random() * 2 - 1) * stage.shakeIntensity;
-    ctx.translate(sx, sy);
+  if (!paused && gameState !== 'tutorial' && stage.shakeTimer > 0 && stage.shakeIntensity > 0) {
+    pixiPost.triggerShake(stage.shakeIntensity);
   }
 
   shards.draw();
@@ -542,55 +701,9 @@ function render() {
     ctx.restore();
   }
 
-  bloomCtx.clearRect(0, 0, bloomCanvas.width, bloomCanvas.height);
-  bloomCtx.save();
-  bloomCtx.scale(0.5, 0.5);
-  bloomCtx.globalAlpha = 0.9;
-  for (let i = 0; i < bullets.pool.length; i++) {
-    const b = bullets.pool[i];
-    bloomCtx.fillStyle = b.flowState ? '#e040fb' : COLOR_PINK;
-    bloomCtx.beginPath();
-    bloomCtx.arc(b.x, b.y, b.flowState ? 5 : 3, 0, Math.PI * 2);
-    bloomCtx.fill();
-  }
-  bloomCtx.globalAlpha = 0.28;
-  for (let i = 0; i < shards.pool.length; i++) {
-    const s = shards.pool[i];
-    bloomCtx.fillStyle = s.color;
-    bloomCtx.beginPath();
-    bloomCtx.arc(s.x, s.y, Math.max(0.1, (s.size || 0) * 0.25), 0, Math.PI * 2);
-    bloomCtx.fill();
-  }
-  for (let i = 0; i < fragments.pool.length; i++) {
-    const f = fragments.pool[i];
-    bloomCtx.globalAlpha = f.alpha * 0.5;
-    bloomCtx.fillStyle = f.color;
-    bloomCtx.beginPath();
-    bloomCtx.arc(f.x, f.y, Math.max(0.1, (f.size || 0) * 0.4), 0, Math.PI * 2);
-    bloomCtx.fill();
-  }
-  {
-    // Tip is at top of sprite (rotated -PI/2 + tilt)
-    const tipAngle = -Math.PI / 2 + drone.tilt;
-    const tx = drone.x + 22 * Math.cos(tipAngle);
-    const ty = drone.y + 22 * Math.sin(tipAngle);
-    bloomCtx.globalAlpha = player.flowStateActive ? 0.95 : 0.85;
-    bloomCtx.fillStyle = player.flowStateActive ? '#e040fb' : COLOR_PINK;
-    bloomCtx.beginPath();
-    bloomCtx.arc(tx, ty, player.flowStateActive ? 5 : 4, 0, Math.PI * 2);
-    bloomCtx.fill();
-  }
-  bloomCtx.restore();
+  _drawNearDeathVignette();
 
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.5;
-  ctx.filter = 'blur(10px)';
-  ctx.drawImage(bloomCanvas, 0, 0, canvas.width, canvas.height);
-  ctx.filter = 'none';
-  ctx.restore();
-
-  stage.drawFlash();
+  // Bloom is now handled by PixiJS GPU post-processing (pixi-post.js)
 
   // Activation flash — brief full-canvas magenta pulse on Flow State start
   if (player.flowStateActivationFlash > 0) {
@@ -603,7 +716,7 @@ function render() {
   }
 
   drawCenterWatermark();
-  drawVignetteAndScanlines();
+  pixiPost.setNearDeath(player.lives === 1 && !player.dead);
   drawHUD();
   streakCallout.draw();
   if (gameState === 'tutorial') tutorial.draw();
@@ -630,6 +743,44 @@ function render() {
       ctx.fillRect(PLAY_X, wipeY - 6, PLAY_W, 12);
       ctx.restore();
     }
+
+    // Redraw kamikazes over the greyscale wipe — they always stay red
+    const activeKamikazes = shards.pool.filter(s => s.isKamikaze);
+    if (activeKamikazes.length > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+      ctx.clip();
+      activeKamikazes.forEach(s => {
+        const drawColor = s.flashTimer > 0 ? '#ffffff' : s.color;
+        const facingAngle = Math.atan2(s.vy, s.vx);
+        const flicker = 0.75 + 0.25 * Math.sin(getNow() * 0.025 + s.x * 0.01);
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(facingAngle);
+        // Bloom
+        ctx.globalAlpha = 0.1 * flicker;
+        setGlow(drawColor, 28);
+        ctx.fillStyle = drawColor;
+        ctx.beginPath();
+        s.pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fill();
+        // Core outline
+        ctx.globalAlpha = 0.62 * flicker;
+        setGlow(drawColor, 18);
+        ctx.lineWidth = 2.8;
+        ctx.strokeStyle = drawColor;
+        ctx.stroke();
+        // Inner bright line
+        ctx.globalAlpha = 0.9 * flicker;
+        setGlow(drawColor, 12);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.restore();
+      });
+      ctx.restore();
+    }
   }
 }
 
@@ -638,23 +789,115 @@ let devKeyBuffer = [];
 let devFastStage = false;
 
 function _restartFromEndScreen() {
-  _resetAllState();
-  gameState = 'playing';
-  endScreenSelection = 0;
-  endScreenSelectionChangedAt = getNow();
-  audio.play('menuConfirm');
-  audio.playMusic('gameplay');
+  startScreenTransition('fade', () => {
+    _resetAllState();
+    gameState = 'playing';
+    endScreenSelection = 0;
+    endScreenSelectionChangedAt = getNow();
+    audio.play('menuConfirm');
+    audio.playMusic('gameplay');
+  });
 }
 
 function _goToTitleFromEndScreen() {
-  _resetAllState();
-  gameState = 'title';
-  endScreenSelection = 0;
-  endScreenSelectionChangedAt = getNow();
-  delete justPressed['Enter'];
-  delete justPressed[' '];
+  startScreenTransition('pixelate', () => {
+    _resetAllState();
+    gameState = 'title';
+    endScreenSelection = 0;
+    endScreenSelectionChangedAt = getNow();
+    delete justPressed['Enter'];
+    delete justPressed[' '];
+    audio.play('menuSelect');
+    audio.playMusic('title');
+  });
+}
+
+function _adjustPauseMusicVolume(delta) {
+  let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+  vol = Math.max(0, Math.min(100, vol + delta));
+  localStorage.setItem('drone_music_vol', vol.toString());
+  localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
+  audio.setMusicVolume(vol / 100);
   audio.play('menuSelect');
-  audio.playMusic('title');
+}
+
+function _activatePauseItem(index, clickX = null) {
+  pauseSel = index;
+  const selItem = PAUSE_ITEMS[index];
+  if (!selItem) return;
+
+  if (selItem === 'MUSIC VOL' && typeof clickX === 'number') {
+    const target = getPauseMenuClickTargets().find(entry => entry.index === index);
+    if (target) {
+      const leftZone = target.x + target.width * 0.32;
+      const rightZone = target.x + target.width * 0.68;
+      if (clickX < leftZone) {
+        _adjustPauseMusicVolume(-5);
+        return;
+      }
+      if (clickX > rightZone) {
+        _adjustPauseMusicVolume(5);
+        return;
+      }
+    }
+  }
+
+  audio.play('menuConfirm');
+  if (selItem === 'RESUME') {
+    paused = false;
+    if (typeof pixiPost !== 'undefined') pixiPost.setPaused(false);
+    return;
+  }
+  if (selItem === 'SFX') {
+    let on = localStorage.getItem('drone_sfx_on') !== '0';
+    on = !on;
+    localStorage.setItem('drone_sfx_on', on ? '1' : '0');
+    audio.setSfxVolume(on ? 1.0 : 0);
+    return;
+  }
+  if (selItem === 'MUSIC VOL') {
+    let vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+    vol = vol > 0 ? 0 : 10;
+    localStorage.setItem('drone_music_vol', vol.toString());
+    localStorage.setItem('drone_music_on', vol > 0 ? '1' : '0');
+    audio.setMusicVolume(vol / 100);
+    return;
+  }
+  if (selItem === 'HOME') {
+    startScreenTransition('fade', () => {
+      paused = false;
+      pauseSel = 0;
+      if (typeof pixiPost !== 'undefined') pixiPost.setPaused(false);
+      gameState = 'title';
+      audio.playMusic('title');
+      delete justPressed['Enter'];
+    });
+  }
+}
+
+function _returnFromLeaderboard() {
+  startScreenTransition('fade', () => {
+    audio.play('menuConfirm');
+    audio.playMusic('title');
+    gameState = 'title';
+  });
+}
+
+function _confirmNameEntry() {
+  if (nameEntry.name.length === 0) return;
+  if (containsBadWord(nameEntry.name)) {
+    nameEntry.rejectTimer = 2000;
+    return;
+  }
+  writePlayerName(nameEntry.name);
+  leaderboard.submitMessage = 'SUBMITTING SCORE...';
+  leaderboard.submitOk = true;
+  startScreenTransition('fade', () => {
+    gameState = 'leaderboard';
+    audio.play('menuConfirm');
+    leaderboard.submitScore(player.score, stage.totalKills);
+    leaderboard.fetchScores();
+  });
 }
 
 window.addEventListener('keydown', e => {
@@ -662,25 +905,35 @@ window.addEventListener('keydown', e => {
   devKeyBuffer.push(e.key.toLowerCase());
   if (devKeyBuffer.length > 3) devKeyBuffer.shift();
   if (devKeyBuffer.join('') === 'dev') {
-    gameState = 'devMenu';
-    devKeyBuffer = [];
-    audio.play('menuConfirm');
+    startScreenTransition('fade', () => {
+      gameState = 'devMenu';
+      devKeyBuffer = [];
+      audio.play('menuConfirm');
+    });
   }
 });
 
 window.addEventListener('keydown', e => {
   if (gameState !== 'devMenu') return;
-  if (e.key === 'Escape') { gameState = 'title'; audio.play('menuSelect'); }
+  if (e.key === 'Escape') {
+    startScreenTransition('fade', () => {
+      gameState = 'title';
+      audio.play('menuSelect');
+      audio.playMusic('title');
+    });
+  }
 });
 
 function devJumpToStage(n) {
-  _resetAllState();
-  stage.current = n;
-  COLOR_BG = STAGE_BG_COLORS[n - 1];
-  if (devFastStage) stage.timer = 8000;
-  gameState = 'playing';
-  audio.playMusic('gameplay');
-  audio.updateMusicIntensity(n);
+  startScreenTransition('fade', () => {
+    _resetAllState();
+    stage.current = n;
+    COLOR_BG = STAGE_BG_COLORS[n - 1];
+    if (devFastStage) stage.timer = 8000;
+    gameState = 'playing';
+    audio.playMusic('gameplay');
+    audio.updateMusicIntensity(n);
+  });
 }
 
 canvas.addEventListener('click', e => {
@@ -707,20 +960,52 @@ canvas.addEventListener('click', e => {
       titleSelection = 2;
       titleSelectionChangedAt = getNow();
       audio.play('menuConfirm');
-      gameState = 'leaderboard';
-      leaderboard.fetchScores();
+      openLeaderboardFromTitle();
     } else if (inTutorial) {
       titleSelection = 1;
       titleSelectionChangedAt = getNow();
       audio.play('menuConfirm');
-      tutorial.start();
-      gameState = 'tutorial';
-      audio.playMusic('gameplay');
+      startTutorialRun();
     } else if (inStartRun) {
       titleSelection = 0;
       titleSelectionChangedAt = getNow();
       audio.play('menuConfirm');
       startGame();
+    }
+  }
+  if (gameState === 'leaderboard') {
+    const target = getClickTargetAt(getLeaderboardClickTargets(), e.offsetX, e.offsetY);
+    if (target?.action === 'return') _returnFromLeaderboard();
+  }
+  if (gameState === 'nameEntry') {
+    const target = getClickTargetAt(getNameEntryClickTargets(), e.offsetX, e.offsetY);
+    if (target?.action === 'confirm') _confirmNameEntry();
+    else if (target?.action === 'delete' && nameEntry.name.length > 0) {
+      nameEntry.name = nameEntry.name.slice(0, -1);
+      nameEntry.rejectTimer = 0;
+      audio.play('menuSelect');
+    }
+  }
+  if (paused && gameState === 'playing') {
+    const target = getClickTargetAt(getPauseMenuClickTargets(), e.offsetX, e.offsetY);
+    if (target) _activatePauseItem(target.index, e.offsetX);
+  }
+  if (player.dead && gameState !== 'nameEntry') {
+    const target = getClickTargetAt(getDeathScreenClickTargets(), e.offsetX, e.offsetY);
+    if (target) {
+      endScreenSelection = target.selection;
+      endScreenSelectionChangedAt = getNow();
+      if (target.action === 'restart') _restartFromEndScreen();
+      else if (target.action === 'menu') _goToTitleFromEndScreen();
+    }
+  }
+  if (gameState === 'win') {
+    const target = getClickTargetAt(getWinScreenClickTargets(), e.offsetX, e.offsetY);
+    if (target) {
+      endScreenSelection = target.selection;
+      endScreenSelectionChangedAt = getNow();
+      if (target.action === 'restart') _restartFromEndScreen();
+      else if (target.action === 'menu') _goToTitleFromEndScreen();
     }
   }
   if (gameState === 'devMenu') handleDevMenuClick(e);
@@ -782,6 +1067,7 @@ function loop(timestamp) {
   lastTime = timestamp;
   update(delta);
   render();
+  pixiPost.render();
   for (const k in justPressed) delete justPressed[k];
   requestAnimationFrame(loop);
 }

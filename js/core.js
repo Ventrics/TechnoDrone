@@ -49,9 +49,6 @@ let COLOR_BG = DEFAULT_COLOR_BG;
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 
-const bloomCanvas = document.createElement('canvas');
-const bloomCtx    = bloomCanvas.getContext('2d');
-
 // Play area (portrait game zone) and HUD panel dimensions, computed in resize()
 let PLAY_W, PLAY_H, PLAY_X, PLAY_Y;
 let PANEL_X, PANEL_Y, PANEL_W, PANEL_H;
@@ -72,8 +69,7 @@ function resize() {
   PANEL_W = canvas.width - PANEL_X - 20;
   PANEL_H = PLAY_H;
 
-  bloomCanvas.width  = Math.ceil(canvas.width  / 2);
-  bloomCanvas.height = Math.ceil(canvas.height / 2);
+  if (typeof pixiPost !== 'undefined') pixiPost.resize();
 }
 
 window.addEventListener('resize', resize);
@@ -103,7 +99,25 @@ window.addEventListener('keydown', e => {
   if (typeof audio !== 'undefined') audio.init();
 });
 
-window.addEventListener('keyup', e => keys[e.key] = false);
+window.addEventListener('keyup', e => {
+  keys[e.key] = false;
+  if (e.key.length === 1) {
+    keys[e.key.toUpperCase()] = false;
+    keys[e.key.toLowerCase()] = false;
+  }
+});
+function resetInputState() {
+  for (const key in keys) delete keys[key];
+  for (const key in justPressed) delete justPressed[key];
+  mouseDown = false;
+  mouseRightDown = false;
+}
+
+window.addEventListener('blur', resetInputState);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) resetInputState();
+});
+
 canvas.addEventListener('mousedown', e => {
   if (e.button === 0) mouseDown = true;
   if (e.button === 2) mouseRightDown = true;

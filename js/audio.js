@@ -467,45 +467,13 @@ window.audio = (function() {
   }
   
   // --- Music System ---
-  function createMusicVoice(type, freq, gainVal, pulseFreq=null, pulseDepth=0) {
-    if (!ctx) return null;
-    const osc = ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.value = freq;
-    
-    const gainNode = ctx.createGain();
-    gainNode.gain.value = gainVal;
-    
-    osc.connect(gainNode);
-    gainNode.connect(musicGain);
-    
-    let lfo = null, lfoGain = null;
-    if (pulseFreq) {
-      lfo = ctx.createOscillator();
-      lfo.type = 'sine';
-      lfo.frequency.value = pulseFreq;
-      lfoGain = ctx.createGain();
-      lfoGain.gain.value = pulseDepth;
-      if (pulseDepth > 1) { // Large values mean detune/pitch mod
-        lfo.connect(lfoGain);
-        lfoGain.connect(osc.detune);
-      } else {
-        lfo.connect(lfoGain);
-        lfoGain.connect(gainNode.gain);
-      }
-      lfo.start();
-    }
-    
-    osc.start();
-    return { osc, gainNode, lfo, lfoGain, baseGain: gainVal };
-  }
-
   function stopMusic(fadeMs = 500) {
     if (!ctx) return;
     if (_bgmEl && !_bgmEl.paused) {
       _bgmEl.pause();
       _bgmEl.currentTime = 0;
     }
+    const t = ctx.currentTime;
     const fSec = fadeMs / 1000;
     musicVoices.forEach(v => {
       if(!v || !v.gainNode) return;
@@ -584,8 +552,6 @@ window.audio = (function() {
       }
       return isMuted;
     },
-    registerSound: (name, path) => { console.warn('audio.registerSound not yet implemented:', name, path); },
-    registerMusic: (name, path) => { console.warn('audio.registerMusic not yet implemented:', name, path); },
     get isMuted() { return isMuted; }
   };
 })();

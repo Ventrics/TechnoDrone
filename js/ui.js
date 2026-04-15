@@ -1,3 +1,6 @@
+const TITLE_WORDMARK_FONT = '"cc-running-with-scissors-up", "anatol-mn", sans-serif';
+const UI_DISPLAY_FONT = '"manifold-extd-cf", "Eurostile Extended", "Eurostile Extended #2", "Microgramma D Extended", "Microgramma", sans-serif';
+
 const lbStars = Array.from({ length: 80 }, () => ({
   x: Math.random() * 1920,
   y: Math.random() * 1080,
@@ -282,9 +285,7 @@ const leaderboard = {
     titleGridOff += delta * 0.022;
     updateLbBg(delta);
     if (justPressed['Escape'] || justPressed['Backspace']) {
-      audio.play('menuConfirm');
-      audio.playMusic('title');
-      gameState = 'title';
+      _returnFromLeaderboard();
     }
   },
 
@@ -313,7 +314,7 @@ const leaderboard = {
     const headingLetters = heading.split('');
     const flicker = 0.9 + 0.1 * Math.sin(now * 0.014) * Math.sin(now * 0.029);
     const glitchPulse = 0.5 + 0.5 * Math.sin(now * 0.013);
-    ctx.font = `${headerFont}px "anatol-mn", sans-serif`;
+    ctx.font = `${headerFont}px ${TITLE_WORDMARK_FONT}`;
     const spacing = Math.max(4, headerFont * 0.04);
     const widths = headingLetters.map(ch => ch === ' ' ? headerFont * 0.42 : ctx.measureText(ch).width);
     const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (headingLetters.length - 1);
@@ -345,13 +346,13 @@ const leaderboard = {
       ctx.globalAlpha = 0.5 + pulse * 0.5;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px monospace`;
+      ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px ${UI_DISPLAY_FONT}`;
       ctx.fillText('FETCHING DATA...', cx, H * 0.49);
     } else if (this.error) {
       setGlow(COLOR_CRIMSON, 25);
       ctx.textAlign = 'center';
       ctx.fillStyle = COLOR_CRIMSON;
-      ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px monospace`;
+      ctx.font = `bold ${Math.round(Math.max(18, 22 * layoutScale))}px ${UI_DISPLAY_FONT}`;
       ctx.fillText('CONNECTION FAILED', cx, H * 0.49);
     } else {
       const timeSinceLoad = now - (this.loadTime || now);
@@ -381,9 +382,9 @@ const leaderboard = {
         ctx.textBaseline = 'middle';
         setGlow('#ffe86a', 24);
         ctx.fillStyle = '#fff27d';
-        ctx.font = `bold ${Math.round(Math.max(22, 54 * layoutScale))}px monospace`;
+        ctx.font = `bold ${Math.round(Math.max(22, 54 * layoutScale))}px ${UI_DISPLAY_FONT}`;
         ctx.fillText(`#1 ${leader.player_name}`, x, y - 2 * layoutScale);
-        ctx.font = `bold ${Math.round(Math.max(13, 15 * layoutScale))}px monospace`;
+        ctx.font = `bold ${Math.round(Math.max(13, 15 * layoutScale))}px ${UI_DISPLAY_FONT}`;
         ctx.globalAlpha = currentAlpha * 0.82;
         ctx.fillStyle = '#ffffff';
         ctx.fillText(`${leader.score} SCORE`, x, y + 36 * layoutScale);
@@ -398,7 +399,7 @@ const leaderboard = {
         ctx.globalAlpha = 0.85;
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold ${Math.round(labelFont * 1.2)}px monospace`;
+        ctx.font = `bold ${Math.round(labelFont * 1.2)}px ${UI_DISPLAY_FONT}`;
         ctx.fillText('RANKINGS', cx, lowerListY - 26 * layoutScale);
 
         const listW = Math.min(620 * layoutScale, W * 0.7);
@@ -431,7 +432,7 @@ const leaderboard = {
 
           setGlow(isMe ? '#fb29fd' : '#31afd4', isMe ? 10 : 6);
           ctx.fillStyle = '#ffffff';
-          ctx.font = `bold ${rowFont}px monospace`;
+          ctx.font = `bold ${rowFont}px ${UI_DISPLAY_FONT}`;
           ctx.fillText(`#${i + 1}`, rankX, y);
           ctx.fillText(entry.player_name, nameX, y);
           ctx.textAlign = 'right';
@@ -455,7 +456,7 @@ const leaderboard = {
     ctx.globalAlpha = pulse2;
     setGlow('#31afd4', 10);
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${footerHintSize}px monospace`;
+    ctx.font = `bold ${footerHintSize}px ${UI_DISPLAY_FONT}`;
     ctx.fillText('[ ESC OR BACKSPACE TO RETURN ]', cx, footerHintY);
 
     if (this.submitMessage) {
@@ -463,7 +464,7 @@ const leaderboard = {
       ctx.globalAlpha = 0.92;
       setGlow(this.submitOk ? '#31afd4' : '#ff5544', 12);
       ctx.fillStyle = this.submitOk ? '#ffffff' : '#ffb8b0';
-      ctx.font = `bold ${footerStatusSize}px monospace`;
+      ctx.font = `bold ${footerStatusSize}px ${UI_DISPLAY_FONT}`;
       ctx.fillText(this.submitMessage, cx, footerStatusY);
     }
 
@@ -490,18 +491,7 @@ const nameEntry = {
   update(delta) {
     if (this.rejectTimer > 0) this.rejectTimer -= delta;
     if (justPressed['Enter']) {
-      if (this.name.length > 0) {
-        if (containsBadWord(this.name)) {
-          this.rejectTimer = 2000;
-        } else {
-          writePlayerName(this.name);
-          leaderboard.submitMessage = 'SUBMITTING SCORE...';
-          leaderboard.submitOk = true;
-          gameState = 'leaderboard';
-          leaderboard.submitScore(player.score, stage.totalKills);
-          leaderboard.fetchScores();
-        }
-      }
+      _confirmNameEntry();
     } else if (justPressed['Backspace']) {
       this.name = this.name.slice(0, -1);
       this.rejectTimer = 0;
@@ -525,22 +515,28 @@ const nameEntry = {
 
     setGlow(COLOR_CYAN, 20);
     ctx.fillStyle = COLOR_CYAN;
-    ctx.font = 'bold 36px monospace';
+    ctx.font = `bold 36px ${UI_DISPLAY_FONT}`;
     ctx.fillText('ENTER YOUR CALLSIGN:', cx, cy - 40);
 
     clearGlow();
     const rejected = this.rejectTimer > 0;
     ctx.fillStyle = rejected ? '#ff3333' : '#ffffff';
     if (rejected) { ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 16; }
-    ctx.font = 'bold 48px monospace';
+    ctx.font = `bold 48px ${UI_DISPLAY_FONT}`;
     const cursor = (Math.floor(getNow() / 500) % 2 === 0) ? '_' : '';
     ctx.fillText(this.name + cursor, cx, cy + 20);
     ctx.shadowBlur = 0;
 
-    ctx.font = '14px monospace';
+    ctx.font = `14px ${UI_DISPLAY_FONT}`;
     ctx.fillStyle = rejected ? '#ff6666' : '#888888';
     const hint = rejected ? 'INVALID CALLSIGN' : this.name.length > 0 ? 'PRESS ENTER TO CONFIRM' : 'TYPE YOUR CALLSIGN';
     ctx.fillText(hint, cx, cy + 80);
+
+    if (this.name.length > 0) {
+      ctx.font = `bold 12px ${UI_DISPLAY_FONT}`;
+      ctx.fillStyle = '#6fa8ff';
+      ctx.fillText('[ BACKSPACE ]', cx, cy + 116);
+    }
     ctx.restore();
   }
 };
@@ -562,7 +558,7 @@ function drawStageNodes(options = {}) {
   ctx.save();
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.font         = `bold ${Math.round(Math.max(10, 12 * layoutScale * progressScale))}px monospace`;
+  ctx.font         = `bold ${Math.round(Math.max(10, 12 * layoutScale * progressScale))}px ${UI_DISPLAY_FONT}`;
   ctx.globalAlpha  = 0.64;
   setGlow('#b566ff', 10);
   ctx.fillStyle = '#9933ff';
@@ -607,7 +603,7 @@ function drawTitleScreen() {
   const { headingY, startRunY, tutorialY, leaderboardY, statsY, stageNodesY, layoutScale, compact } = layout;
   const flicker = 0.9 + 0.1 * Math.sin(now * 0.014) * Math.sin(now * 0.029);
   const menuPulse = 0.6 + 0.4 * Math.sin(now * 0.0032);
-  const headingFontSize = Math.round(Math.max(74, Math.min(126, 126 * layoutScale)));
+  const headingFontSize = Math.round(Math.max(72, Math.min(118, 118 * layoutScale)));
   const actionFontSize = Math.round(Math.max(28, Math.min(42, 42 * layoutScale)));
   const statValueFontSize = Math.round(Math.max(20, Math.min(28, 28 * layoutScale)));
   const statLabelFontSize = Math.round(Math.max(10, Math.min(11, 11 * layoutScale)));
@@ -701,10 +697,10 @@ function drawTitleScreen() {
   ctx.textBaseline = 'middle';
 
   const drawNeonWord = (text, y, fontSize, palette, dropoutScale = 0.3) => {
-    ctx.font = `${fontSize}px "anatol-mn", sans-serif`;
+    ctx.font = `${fontSize}px ${TITLE_WORDMARK_FONT}`;
     const letters = text.split('');
-    const spacing = Math.max(3, fontSize * 0.04);
-    const widths = letters.map(ch => ch === ' ' ? fontSize * 0.42 : ctx.measureText(ch).width);
+    const spacing = Math.max(2, fontSize * 0.02);
+    const widths = letters.map(ch => ch === ' ' ? fontSize * 0.3 : ctx.measureText(ch).width);
     const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (letters.length - 1);
     let drawX = cx - totalWidth / 2;
 
@@ -778,13 +774,13 @@ function drawTitleScreen() {
     const sx = cx;
     ctx.globalAlpha = 0.52;
     ctx.fillStyle = stat.color;
-    ctx.font = `bold ${statLabelFontSize}px monospace`;
+    ctx.font = `bold ${statLabelFontSize}px ${UI_DISPLAY_FONT}`;
     ctx.fillText(stat.label, sx, statsY - 16 * layoutScale);
 
     ctx.globalAlpha = 1;
     setGlow(stat.color, 10);
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${statValueFontSize}px monospace`;
+    ctx.font = `bold ${statValueFontSize}px ${UI_DISPLAY_FONT}`;
     ctx.fillText(stat.value, sx, statsY + 14 * layoutScale);
     clearGlow();
   });
@@ -795,7 +791,7 @@ function drawTitleScreen() {
 
 function getTitleOptionWidth(label, fontSize) {
   ctx.save();
-  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.font = `bold ${fontSize}px ${UI_DISPLAY_FONT}`;
   const width = ctx.measureText(label).width;
   ctx.restore();
   return width;
@@ -805,7 +801,7 @@ function drawTitleActionText(label, y, fontSize, isActive) {
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.font = `bold ${fontSize}px ${UI_DISPLAY_FONT}`;
 
   if (isActive) {
     ctx.globalAlpha = 0.18;
@@ -868,539 +864,27 @@ function getTitleScreenLayout() {
   };
 }
 
-function drawEndScreen(title, accentColor, subtitle, prompt) {
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2;
-  const now = getNow();
-  const pulse = 0.6 + 0.4 * Math.sin(now * 0.003);
-  const panelW = Math.min(620, W - 120);
-  const panelH = 420;
-  const px = cx - panelW / 2;
-  const py = cy - panelH / 2;
-  const scoreIsBest = player.score > 0 && player.score >= save.highScore;
-
+function _measureCenteredTextBounds(label, cx, y, font, paddingX = 24, paddingY = 14) {
   ctx.save();
-  ctx.fillStyle = '#030303';
-  ctx.fillRect(0, 0, W, H);
-  starField.draw();
-
-  ctx.globalAlpha = 0.08;
-  ctx.strokeStyle = COLOR_CYAN;
-  ctx.lineWidth = 1;
-  for (let y = 0; y < H; y += 4) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-
-  const bgGrad = ctx.createLinearGradient(px, py, px + panelW, py + panelH);
-  bgGrad.addColorStop(0, 'rgba(5,12,22,0.92)');
-  bgGrad.addColorStop(1, 'rgba(10,4,14,0.92)');
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(px, py, panelW, panelH);
-
-  ctx.globalAlpha = 0.24;
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(px, py, panelW, 4);
-
-  setGlow(COLOR_CYAN, 24);
-  ctx.strokeStyle = COLOR_CYAN;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(px, py, panelW, panelH);
-  clearGlow();
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  ctx.globalAlpha = 0.18;
-  setGlow(accentColor, 50);
-  ctx.fillStyle = accentColor;
-  ctx.font = 'bold 72px monospace';
-  ctx.fillText(title, cx, py + 70);
-
-  ctx.globalAlpha = 1;
-  setGlow('#ffffff', 10);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 54px monospace';
-  ctx.fillText(title, cx, py + 70);
-  clearGlow();
-
-  if (subtitle) {
-    ctx.globalAlpha = 0.82;
-    ctx.fillStyle = accentColor;
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText(subtitle, cx, py + 118);
-  }
-
-  ctx.globalAlpha = 0.25;
-  ctx.strokeStyle = COLOR_CYAN;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(px + 40, py + 146);
-  ctx.lineTo(px + panelW - 40, py + 146);
-  ctx.stroke();
-
-  setGlow(scoreIsBest ? COLOR_CYAN : COLOR_PINK, 18);
-  ctx.fillStyle = scoreIsBest ? COLOR_CYAN : '#ffffff';
-  ctx.font = '12px monospace';
-  ctx.fillText('FINAL SCORE', cx, py + 184);
-  ctx.font = 'bold 46px monospace';
-  ctx.fillText(String(player.score), cx, py + 228);
-  clearGlow();
-
-  const statY = py + 292;
-  const statGap = 150;
-  const statItems = [
-    { label: 'STAGE', value: `${Math.min(stage.current, 10)} / 10`, color: COLOR_CYAN },
-    { label: 'KILLS', value: `${stage.totalKills}`, color: COLOR_PINK },
-    { label: 'BEST', value: `${save.highScore}`, color: '#ffffff' },
-  ];
-
-  statItems.forEach((item, i) => {
-    const sx = cx + (i - 1) * statGap;
-    ctx.globalAlpha = 0.16;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(sx - 56, statY - 30, 112, 70);
-
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = item.color;
-    ctx.font = 'bold 12px monospace';
-    ctx.fillText(item.label, sx, statY - 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 24px monospace';
-    ctx.fillText(item.value, sx, statY + 18);
-  });
-
-  const history = save.runs.slice(-4);
-  if (history.length > 1) {
-    ctx.globalAlpha = 0.32;
-    ctx.fillStyle = COLOR_CYAN;
-    ctx.font = '11px monospace';
-    history.forEach((r, i) => {
-      const runNum = save.runs.length - history.length + i + 1;
-      ctx.fillText(`RUN ${runNum}  ${r.score}  ${r.kills}K`, cx, py + 354 + i * 14);
-    });
-  }
-
-  ctx.globalAlpha = pulse * 0.7 + 0.2;
-  setGlow(accentColor, 14);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px monospace';
-  ctx.fillText(prompt, cx, py + panelH - 28);
-  clearGlow();
-
+  ctx.font = font;
+  const width = ctx.measureText(label).width;
   ctx.restore();
-}
-
-function drawDeathScreen() {
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2;
-  const now = getNow();
-  const scoreIsBest = player.score > 0 && player.score >= save.highScore;
-  const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(W / 1280, H / 720)));
-  const compact = W < 920;
-  const headingY = cy - 160 * layoutScale;
-  const labelY = cy + 18 * layoutScale;
-  const scoreY = cy + 78 * layoutScale;
-  const dividerY = cy + 114 * layoutScale;
-  const statsY = cy + 156 * layoutScale;
-  const controlsY = cy + 235 * layoutScale;
-  const flicker = 0.88 + 0.12 * Math.sin(now * 0.017) * Math.sin(now * 0.031);
-  const pulse = 0.6 + 0.4 * Math.sin(now * 0.003);
-  const selectPulse = 0.65 + 0.35 * Math.sin(now * 0.005);
-  const selectProg = Math.min(1, (now - endScreenSelectionChangedAt) / 180);
-  const selectEase = 1 - Math.pow(1 - selectProg, 3);
-  const glitchPulse = 0.5 + 0.5 * Math.sin(now * 0.013);
-  const headingFontSize = Math.round(Math.max(68, Math.min(110, 110 * layoutScale)));
-  const scoreFontSize = Math.round(Math.max(42, Math.min(64, 64 * layoutScale)));
-  const statValueFontSize = Math.round(Math.max(20, Math.min(28, 28 * layoutScale)));
-  const statLabelFontSize = Math.round(Math.max(10, Math.min(11, 11 * layoutScale)));
-  const controlFontSize = Math.round(Math.max(12, Math.min(14, 14 * layoutScale)));
-  const bestTagFontSize = Math.round(Math.max(11, Math.min(13, 13 * layoutScale)));
-  const dividerWidth = Math.min(W * 0.52, 320 * layoutScale);
-  const statGap = compact ? Math.min(120 * layoutScale, W * 0.24) : Math.min(180 * layoutScale, W * 0.21);
-  const statXs = [cx - statGap, cx, cx + statGap];
-
-  ctx.save();
-
-  ctx.fillStyle = '#030303';
-  ctx.fillRect(0, 0, W, H);
-  starField.draw();
-
-  const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.76);
-  vignette.addColorStop(0, 'rgba(255,32,0,0.05)');
-  vignette.addColorStop(0.45, 'rgba(18,0,0,0.08)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.72)');
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = COLOR_CYAN;
-  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const heading = 'GAME OVER';
-  const headingLetters = heading.split('');
-  ctx.font = `bold ${headingFontSize}px monospace`;
-  const spacing = Math.max(4, headingFontSize * 0.04);
-  const letterWidths = headingLetters.map(ch => ch === ' ' ? headingFontSize * 0.42 : ctx.measureText(ch).width);
-  const totalHeadingWidth = letterWidths.reduce((sum, width) => sum + width, 0) + spacing * (headingLetters.length - 1);
-  let drawX = cx - totalHeadingWidth / 2;
-
-  const drawNeonHeading = (alphaBase, blur, fill, glowColor, dropoutScale) => {
-    drawX = cx - totalHeadingWidth / 2;
-    ctx.fillStyle = fill;
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = blur;
-    headingLetters.forEach((ch, i) => {
-      const charWidth = letterWidths[i];
-      const charCenter = drawX + charWidth / 2;
-      const noise = 0.76 + 0.24 * (0.5 + 0.5 * Math.sin(now * 0.021 + i * 0.9));
-      const dropout = ch === ' ' ? 1 : Math.max(0.42, 1 - dropoutScale * glitchPulse * ((i % 3) === 1 ? 0.55 : 0.18));
-      ctx.globalAlpha = alphaBase * flicker * noise * dropout;
-      ctx.fillText(ch, charCenter, headingY);
-      drawX += charWidth + spacing;
-    });
+  return {
+    x: cx - width / 2 - paddingX,
+    y: y - paddingY,
+    width: width + paddingX * 2,
+    height: paddingY * 2,
   };
-
-  drawNeonHeading(0.04, 90, '#ff0000', '#ff0000', 0.12);
-  drawNeonHeading(0.12, 50, '#ff2200', '#ff0000', 0.18);
-  drawNeonHeading(0.55, 24, '#ff3300', '#ff2200', 0.24);
-  drawNeonHeading(1.0, 8, '#ff5544', '#ff5544', 0.3);
-  ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
-
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = COLOR_CYAN;
-  ctx.font = `${Math.round(Math.max(11, 12 * layoutScale))}px monospace`;
-  ctx.fillText('FINAL SCORE', cx, labelY);
-
-  if (scoreIsBest) {
-    const bestPulse = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(now * 0.008));
-    ctx.globalAlpha = 0.88 * bestPulse;
-    setGlow(COLOR_CYAN, 14 + bestPulse * 10);
-    ctx.fillStyle = '#d9ffff';
-    ctx.font = `bold ${bestTagFontSize}px monospace`;
-    ctx.fillText('NEW ALL-TIME BEST', cx, labelY - 22 * layoutScale);
-    clearGlow();
-  }
-
-  ctx.globalAlpha = 1;
-  setGlow(scoreIsBest ? COLOR_CYAN : COLOR_PINK, scoreIsBest ? 24 : 20);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${scoreFontSize}px monospace`;
-  ctx.fillText(`${player.score}`, cx, scoreY);
-  clearGlow();
-
-  ctx.globalAlpha = 0.18;
-  ctx.strokeStyle = COLOR_CYAN;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cx - dividerWidth / 2, dividerY);
-  ctx.lineTo(cx + dividerWidth / 2, dividerY);
-  ctx.stroke();
-
-  const stats = [
-    { label: 'STAGE', value: `${Math.min(stage.current, 10)} / 10`, color: COLOR_CYAN },
-    { label: 'KILLS', value: `${stage.totalKills}`, color: COLOR_PINK },
-    { label: 'ALL-TIME BEST', value: `${save.highScore}`, color: '#aaaaaa' }
-  ];
-
-  stats.forEach((stat, i) => {
-    const sx = statXs[i];
-    ctx.globalAlpha = 0.52;
-    ctx.fillStyle = stat.color;
-    ctx.font = `bold ${statLabelFontSize}px monospace`;
-    ctx.fillText(stat.label, sx, statsY - 16 * layoutScale);
-
-    ctx.globalAlpha = 1;
-    setGlow(stat.color, i === 2 ? 8 : 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${statValueFontSize}px monospace`;
-    ctx.fillText(stat.value, sx, statsY + 14 * layoutScale);
-    clearGlow();
-  });
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold ${controlFontSize}px monospace`;
-  const options = [
-    { label: '[ R - START NEW RUN ]', y: controlsY, activeGlow: COLOR_PINK, activeFill: '#ffffff', idleFill: '#8f8f8f' },
-    { label: '[ M - MAIN MENU ]', y: controlsY + 30 * layoutScale, activeGlow: '#bbbbbb', activeFill: '#d7d7d7', idleFill: '#7a7a7a' }
-  ];
-
-  options.forEach((option, idx) => {
-    const isSelected = endScreenSelection === idx;
-    const tw = ctx.measureText(option.label).width;
-
-    if (isSelected) {
-      const cardW = tw + 36 * layoutScale;
-      const cardH = 24 * layoutScale;
-      const cardX = cx - cardW / 2;
-      const cardY = option.y - cardH / 2;
-      const cardGlow = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY);
-      cardGlow.addColorStop(0, 'rgba(255,255,255,0)');
-      cardGlow.addColorStop(0.5, idx === 0 ? 'rgba(255,0,127,0.10)' : 'rgba(255,255,255,0.08)');
-      cardGlow.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.globalAlpha = 0.45 * selectEase;
-      ctx.fillStyle = cardGlow;
-      ctx.fillRect(cardX, cardY, cardW, cardH);
-    }
-
-    ctx.globalAlpha = isSelected ? (pulse * 0.85 + 0.1) : 0.28;
-    setGlow(isSelected ? option.activeGlow : 'transparent', isSelected ? 12 : 0);
-    ctx.fillStyle = isSelected ? option.activeFill : option.idleFill;
-    ctx.fillText(option.label, cx, option.y);
-
-    if (isSelected) {
-      const bracketOffset = tw / 2 + 20 * layoutScale;
-      const slide = (1 - selectEase) * 12;
-      ctx.globalAlpha = 0.6 + selectPulse * 0.4;
-      ctx.fillStyle = option.activeFill;
-      setGlow(option.activeGlow, 14);
-      ctx.fillText('[', cx - bracketOffset + slide, option.y);
-      ctx.fillText(']', cx + bracketOffset - slide, option.y);
-    }
-    clearGlow();
-  });
-
-  ctx.globalAlpha = 1;
-  clearGlow();
-  ctx.restore();
 }
 
-function drawWinScreen() {
+function getPauseMenuClickTargets() {
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
-  const now = getNow();
-  const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(W / 1280, H / 720)));
-  const headingY = cy - 150 * layoutScale;
-  const subtitleY = cy - 88 * layoutScale;
-  const scoreLabelY = cy - 8 * layoutScale;
-  const scoreY = cy + 48 * layoutScale;
-  const killsLabelY = cy + 118 * layoutScale;
-  const killsY = cy + 164 * layoutScale;
-  const controlsY = cy + 258 * layoutScale;
-  const pulse = 0.62 + 0.38 * Math.sin(now * 0.004);
-  const heroColor = '#d9d4ff';
-  const heroGlow = '#8b5cf6';
-  const accent = '#fb29fd';
-  const accentBlue = '#31afd4';
-  const headingFontSize = Math.round(Math.max(70, Math.min(118, 118 * layoutScale)));
-  const scoreFontSize = Math.round(Math.max(72, Math.min(118, 118 * layoutScale)));
-  const killsFontSize = Math.round(Math.max(42, Math.min(68, 68 * layoutScale)));
-  const controlFontSize = Math.round(Math.max(12, Math.min(14, 14 * layoutScale)));
-  const selectPulse = 0.65 + 0.35 * Math.sin(now * 0.005);
-  const selectProg = Math.min(1, (now - endScreenSelectionChangedAt) / 180);
-  const selectEase = 1 - Math.pow(1 - selectProg, 3);
-
-  ctx.save();
-  ctx.fillStyle = '#020204';
-  ctx.fillRect(0, 0, W, H);
-  starField.draw();
-
-  const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.8);
-  vignette.addColorStop(0, 'rgba(139,92,246,0.06)');
-  vignette.addColorStop(0.38, 'rgba(10,6,24,0.06)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.globalAlpha = 0.07;
-  ctx.fillStyle = accentBlue;
-  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-  ctx.globalAlpha = 0.12;
-  ctx.strokeStyle = accentBlue;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-  ctx.clip();
-  drone.draw();
-  ctx.restore();
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const heading = 'MISSION COMPLETE';
-  ctx.font = `${headingFontSize}px "anatol-mn", sans-serif`;
-  const letters = heading.split('');
-  const spacing = Math.max(4, headingFontSize * 0.04);
-  const widths = letters.map(ch => ch === ' ' ? headingFontSize * 0.42 : ctx.measureText(ch).width);
-  const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (letters.length - 1);
-  const drawLayer = (alphaBase, blur, fill, glowColor) => {
-    let drawX = cx - totalWidth / 2;
-    ctx.fillStyle = fill;
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = blur;
-    letters.forEach((ch, i) => {
-      const charWidth = widths[i];
-      const charCenter = drawX + charWidth / 2;
-      const noise = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(now * 0.018 + i * 0.8));
-      ctx.globalAlpha = alphaBase * noise;
-      ctx.fillText(ch, charCenter, headingY);
-      drawX += charWidth + spacing;
-    });
-  };
-
-  drawLayer(0.08, 56, accent, heroGlow);
-  drawLayer(0.24, 30, heroGlow, heroGlow);
-  drawLayer(1.0, 10, heroColor, accentBlue);
-  ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
-
-  ctx.globalAlpha = 0.9;
-  ctx.font = `${Math.round(Math.max(14, 16 * layoutScale))}px monospace`;
-  setGlow(accentBlue, 12);
-  ctx.fillStyle = '#e6f7ff';
-  ctx.fillText('ALL 10 STAGES CLEARED', cx, subtitleY);
-  clearGlow();
-
-  ctx.globalAlpha = 0.6;
-  ctx.font = `${Math.round(Math.max(12, 13 * layoutScale))}px monospace`;
-  ctx.fillStyle = accentBlue;
-  ctx.fillText('FINAL SCORE', cx, scoreLabelY);
-
-  ctx.globalAlpha = pulse;
-  setGlow(heroGlow, 22);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${scoreFontSize}px monospace`;
-  ctx.fillText(player.score.toLocaleString(), cx, scoreY);
-  clearGlow();
-
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(cx - Math.min(W * 0.18, 180), cy + 84 * layoutScale, Math.min(W * 0.36, 360), 1);
-
-  ctx.globalAlpha = 0.6;
-  ctx.font = `${Math.round(Math.max(12, 13 * layoutScale))}px monospace`;
-  ctx.fillStyle = accent;
-  ctx.fillText('KILLS', cx, killsLabelY);
-
-  ctx.globalAlpha = 0.96;
-  setGlow(accent, 16);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${killsFontSize}px monospace`;
-  ctx.fillText(stage.totalKills.toLocaleString(), cx, killsY);
-  clearGlow();
-
-  ctx.font = `bold ${controlFontSize}px monospace`;
-  const options = [
-    { label: '[ R - PLAY AGAIN ]', y: controlsY, activeGlow: accent, activeFill: '#ffffff', idleFill: '#8f8f8f' },
-    { label: '[ M - MAIN MENU ]', y: controlsY + 30 * layoutScale, activeGlow: '#bbbbbb', activeFill: '#d7d7d7', idleFill: '#7a7a7a' }
-  ];
-
-  options.forEach((option, idx) => {
-    const isSelected = endScreenSelection === idx;
-    const tw = ctx.measureText(option.label).width;
-    if (isSelected) {
-      const cardW = tw + 36 * layoutScale;
-      const cardH = 24 * layoutScale;
-      const cardX = cx - cardW / 2;
-      const cardY = option.y - cardH / 2;
-      ctx.globalAlpha = 0.2 * selectEase;
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(cardX, cardY, cardW, cardH);
-    }
-
-    ctx.globalAlpha = isSelected ? (pulse * 0.85 + 0.1) : 0.3;
-    setGlow(isSelected ? option.activeGlow : 'transparent', isSelected ? 12 : 0);
-    ctx.fillStyle = isSelected ? option.activeFill : option.idleFill;
-    ctx.fillText(option.label, cx, option.y);
-    if (isSelected) {
-      const bracketOffset = tw / 2 + 20 * layoutScale;
-      const slide = (1 - selectEase) * 12;
-      ctx.globalAlpha = 0.6 + selectPulse * 0.4;
-      ctx.fillStyle = option.activeFill;
-      setGlow(option.activeGlow, 14);
-      ctx.fillText('[', cx - bracketOffset + slide, option.y);
-      ctx.fillText(']', cx + bracketOffset - slide, option.y);
-    }
-    clearGlow();
-  });
-
-  ctx.restore();
-}
-
-let paused       = false;
-let pauseSel     = 0;
-let soundEnabled = true;
-
-function drawPauseMenu() {
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2;
-
-  ctx.save();
-  ctx.globalAlpha = 0.78;
-  ctx.fillStyle   = '#020206';
-  ctx.fillRect(0, 0, W, H);
-  const ambient = ctx.createRadialGradient(cx, cy - 12, 40, cx, cy, 340);
-  ambient.addColorStop(0, 'rgba(129, 235, 255, 0.10)');
-  ambient.addColorStop(0.38, 'rgba(90, 160, 255, 0.05)');
-  ambient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = ambient;
-  ctx.fillRect(0, 0, W, H);
-
   const pw = 392, ph = 342;
   const px = cx - pw / 2, py = cy - ph / 2;
-
-  const panelGrad = ctx.createLinearGradient(px, py, px + pw, py + ph);
-  panelGrad.addColorStop(0, 'rgba(7, 12, 22, 0.78)');
-  panelGrad.addColorStop(0.52, 'rgba(4, 8, 18, 0.72)');
-  panelGrad.addColorStop(1, 'rgba(8, 12, 25, 0.80)');
-  ctx.fillStyle = panelGrad;
-  _roundRect(ctx, px, py, pw, ph, 18);
-  ctx.fill();
-
-  ctx.globalAlpha = 0.16;
-  setGlow(COLOR_CYAN, 30);
-  ctx.strokeStyle = COLOR_CYAN;
-  ctx.lineWidth = 2;
-  _roundRect(ctx, px, py, pw, ph, 18);
-  ctx.stroke();
-  clearGlow();
-
-  ctx.globalAlpha = 0.4;
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 1;
-  _roundRect(ctx, px + 7, py + 7, pw - 14, ph - 14, 14);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(px + 26, py + 82, pw - 52, 1);
-  ctx.globalAlpha = 1;
-
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font         = 'bold 34px monospace';
-  setGlow(COLOR_CYAN, 34);
-  ctx.fillStyle = COLOR_CYAN;
-  ctx.fillText('PAUSED', cx, py + 52);
-  ctx.globalAlpha = 0.32;
-  ctx.fillStyle = '#f3f0ff';
-  clearGlow();
-  ctx.font = '11px monospace';
-  ctx.fillText('SYSTEM HOLD // SESSION FROZEN', cx, py + 76);
-  ctx.globalAlpha = 1;
-
-  PAUSE_ITEMS.forEach((item, i) => {
-    const iy      = py + 120 + i * 42;
-    const sel     = i === pauseSel;
-    let label     = item;
-    
+  return PAUSE_ITEMS.map((item, i) => {
+    const iy = py + 120 + i * 42;
+    let label = item;
     if (item === 'MUSIC VOL') {
       const vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
       const bars = Math.round(vol / 10);
@@ -1410,28 +894,113 @@ function drawPauseMenu() {
       label = `SFX        [${sfxOn ? 'ON ' : 'OFF'}]`;
     }
 
-    if (sel) {
-      const chipW = Math.min(318, Math.max(220, ctx.measureText(label).width + 48));
-      const chipX = cx - chipW / 2;
-      const chipY = iy - 17;
-      ctx.globalAlpha = 0.38;
-      ctx.fillStyle = '#000840';
-      _roundRect(ctx, chipX, chipY, chipW, 34, 10);
-      ctx.fill();
-      ctx.globalAlpha = 0.85;
-      setGlow(COLOR_CYAN, 16);
-      ctx.strokeStyle = COLOR_CYAN;
-      ctx.lineWidth = 1.2;
-      _roundRect(ctx, chipX, chipY, chipW, 34, 10);
-      ctx.stroke();
-      clearGlow();
-    }
+    ctx.save();
+    ctx.font = `${i === pauseSel ? 'bold ' : ''}21px ${UI_DISPLAY_FONT}`;
+    const chipW = Math.min(318, Math.max(220, ctx.measureText(label).width + 48));
+    ctx.restore();
 
+    return {
+      item,
+      index: i,
+      x: cx - chipW / 2,
+      y: iy - 17,
+      width: chipW,
+      height: 34,
+      centerY: iy,
+    };
+  });
+}
+
+function getLeaderboardClickTargets() {
+  const H = canvas.height;
+  const cx = canvas.width / 2;
+  const layoutScale = Math.max(0.72, Math.min(1.08, Math.min(canvas.width / 1280, H / 720)));
+  const footerHintSize = Math.round(Math.max(12, 13 * layoutScale));
+  const font = `bold ${footerHintSize}px ${UI_DISPLAY_FONT}`;
+  return [
+    {
+      action: 'return',
+      ..._measureCenteredTextBounds('[ ESC OR BACKSPACE TO RETURN ]', cx, H - 28, font, 28 * layoutScale, 16 * layoutScale),
+    }
+  ];
+}
+
+function getNameEntryClickTargets() {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const confirmLabel = nameEntry.name.length > 0 ? 'PRESS ENTER TO CONFIRM' : 'TYPE YOUR CALLSIGN';
+  return [
+    {
+      action: 'confirm',
+      enabled: nameEntry.name.length > 0,
+      ..._measureCenteredTextBounds(confirmLabel, cx, cy + 80, `14px ${UI_DISPLAY_FONT}`, 24, 14),
+    },
+    {
+      action: 'delete',
+      enabled: nameEntry.name.length > 0,
+      ..._measureCenteredTextBounds('[ BACKSPACE ]', cx, cy + 116, `bold 12px ${UI_DISPLAY_FONT}`, 20, 12),
+    }
+  ];
+}
+
+function getClickTargetAt(targets, x, y) {
+  return targets.find(target =>
+    x >= target.x &&
+    x <= target.x + target.width &&
+    y >= target.y &&
+    y <= target.y + target.height &&
+    target.enabled !== false
+  ) || null;
+}
+
+let paused       = false;
+let pauseSel     = 0;
+let soundEnabled = true;
+
+function drawPauseMenu() {
+  const vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
+  const bars = Math.round(vol / 10);
+  const sfxOn = localStorage.getItem('drone_sfx_on') !== '0';
+  const labels = [
+    'RESUME',
+    `MUSIC VOL  [${'|'.repeat(bars)}${' '.repeat(10 - bars)}]`,
+    `SFX        [${sfxOn ? 'ON ' : 'OFF'}]`,
+    'HOME',
+  ];
+
+  if (typeof pixiPost !== 'undefined' && typeof pixiPost.updatePauseMenu === 'function') {
+    pixiPost.updatePauseMenu(pauseSel, labels);
+    return;
+  }
+
+  // Canvas fallback (no PixiJS)
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const pw = 392, ph = 342;
+  const px = cx - pw / 2, py = cy - ph / 2;
+
+  ctx.save();
+  ctx.globalAlpha = 0.78;
+  ctx.fillStyle = '#020206';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 34px ${UI_DISPLAY_FONT}`;
+  setGlow(COLOR_CYAN, 34);
+  ctx.fillStyle = COLOR_CYAN;
+  ctx.fillText('PAUSED', cx, cy - 100);
+  clearGlow();
+
+  PAUSE_ITEMS.forEach((item, i) => {
+    const iy  = cy - 34 + i * 42;
+    const sel = i === pauseSel;
     setGlow(sel ? '#ffffff' : COLOR_CYAN, sel ? 22 : 8);
     ctx.fillStyle   = sel ? '#ffffff' : COLOR_CYAN;
     ctx.globalAlpha = sel ? 1 : 0.62;
-    ctx.font        = `${sel ? 'bold ' : ''}21px monospace`;
-    ctx.fillText(label, cx, iy);
+    ctx.font        = `${sel ? 'bold ' : ''}21px ${UI_DISPLAY_FONT}`;
+    ctx.fillText(labels[i], cx, iy);
     ctx.globalAlpha = 1;
   });
 
@@ -1463,7 +1032,7 @@ function _divider(tx, cy, barW, alpha = 0.12) {
 }
 
 function _label(tx, cy, text, color = '#555555', size = 11) {
-  ctx.font = `${size}px monospace`;
+  ctx.font = `${size}px ${UI_DISPLAY_FONT}`;
   ctx.fillStyle = color;
   clearGlow();
   ctx.fillText(text, tx, cy);
@@ -1482,6 +1051,42 @@ function _bar(tx, cy, barW, frac, color, trackAlpha = 0.14, h = 8) {
   return cy + h + 6;
 }
 
+function _drawPlayAreaCorners() {
+  if (typeof PLAY_X === 'undefined') return;
+  const stageColor = STAGE_ENEMY_COLORS[Math.min(stage.current - 1, 9)];
+  const flowActive = player.flowStateActive;
+  const now = getNow();
+  const pulse = flowActive
+    ? (0.60 + 0.30 * (Math.sin(now * 0.018) * 0.5 + 0.5))
+    : 0.52;
+  const armLen = 18;
+  const off = 2; // extend just outside the border line
+
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  setGlow(stageColor, flowActive ? 18 : 10);
+  ctx.strokeStyle = stageColor;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'square';
+
+  const corners = [
+    { x: PLAY_X - off,           y: PLAY_Y - off,           dx: -1, dy: -1 },
+    { x: PLAY_X + PLAY_W + off,  y: PLAY_Y - off,           dx:  1, dy: -1 },
+    { x: PLAY_X - off,           y: PLAY_Y + PLAY_H + off,  dx: -1, dy:  1 },
+    { x: PLAY_X + PLAY_W + off,  y: PLAY_Y + PLAY_H + off,  dx:  1, dy:  1 },
+  ];
+  corners.forEach(({ x, y, dx, dy }) => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx * armLen, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + dy * armLen);
+    ctx.stroke();
+  });
+
+  clearGlow();
+  ctx.restore();
+}
+
 function drawHUD() {
   if (PANEL_W < 120) return;
 
@@ -1492,38 +1097,22 @@ function drawHUD() {
   const hudHot    = '#fb29fd';
   const hudColor   = hudBlue;
   const hudMuted   = '#8f78d8';
-  const infoColor  = '#f3f0ff';
-  const infoGlow   = '#c9b8ff';
-  const scoreColor = infoColor;
-  const scoreGlow  = infoGlow;
-  const killsColor = '#d9d4ff';
-  const killsGlow  = '#b8a8ff';
-  const livesColor = '#49f2c2';
-  const livesLabelColor = '#8cf5d7';
+  const textPrimary = '#d9d4ff';
+  const textBright = '#f3f0ff';
+  const scoreLabelColor = '#9db2ff';
+  const scoreColor = textBright;
+  const scoreGlow  = hudBlue;
+  const killsLabelColor = '#f0a9de';
+  const killsColor = '#f6ddff';
+  const killsGlow  = hudPink;
+  const livesColor = '#31afd4';
+  const livesLabelColor = '#8fdcff';
+  const livesValueColor = '#d9f3ff';
   const nukeColor  = hudPink;
   const nukeReadyColor = hudHot;
-  const nukeLabelColor = '#f08fe0';
-  const spreadColor = '#39ff14';
-  const spreadHighlight = '#c8ffc8';
-
-  const getChainColor = chain => {
-    if (chain >= 75) return '#ffffff';
-    if (chain >= 50) return '#ff33cc';
-    if (chain >= 30) return '#aa88ff';
-    if (chain >= 15) return '#31afd4';
-    return '#2e3bf0';
-  };
-  const flowStateFrac = player.flowStateActive
-    ? player.flowStateTimer / player.FLOW_STATE_DURATION
-    : player.flowStateCharge / player.FLOW_STATE_MAX;
-  const heatFrac   = Math.max(0, Math.min(1, player.heat / 100));
-  const heatColor  = heatFrac > 0.75 ? hudHot : heatFrac > 0.45 ? hudPink : hudBlue;
-  const heatPulse  = 0.55 + 0.45 * Math.sin(getNow() * 0.012);
+  const nukeLabelColor = '#f0a9de';
+  const nukeValueColor = '#f6ddff';
   const nukeUsesLeft = player.ultUses;
-  const chainColor = getChainColor(player.chain);
-  const chainFill = player.chain > 0 ? Math.max(0, Math.min(1, player.chainTimer / player.chainWindow)) : 0;
-  const chainBarColor = player.chain > 0 && chainFill < 0.25 ? '#ff3030' : chainColor;
-  const chainDimAlpha = player.chain === 0 && stage.chainBreakFlash <= 0 ? 0.25 : 1;
 
   ctx.save();
   ctx.textAlign = 'left';
@@ -1545,123 +1134,147 @@ function drawHUD() {
     ctx.closePath();
   };
 
+  const uiScale = 1.3;
+
   const drawHudLabel = (text, x, y, color = hudMuted, glow = color, size = 13, alpha = 0.86) => {
     ctx.save();
-    ctx.font = `bold ${size}px monospace`;
+    ctx.font = `bold ${Math.round(size * uiScale)}px ${UI_DISPLAY_FONT}`;
     ctx.globalAlpha = alpha;
     setGlow(glow, 10);
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
     clearGlow();
     ctx.restore();
-    return y + size + 6;
+    return y + Math.round(size * uiScale) + 8;
   };
 
-  const drawPremiumBar = (x, y, width, frac, color, h = 12) => {
-    const clamped = Math.max(0, Math.min(1, frac));
+  const drawArcadeCounter = (x, y, width, label, value, labelColor, accent, valueColor, valueSize, secondary = false) => {
     ctx.save();
-    ctx.globalAlpha = 0.28;
-    ctx.fillStyle = hudNavy;
-    traceSlantedBox(x, y, width, h, h * 0.72);
-    ctx.fill();
+    const labelY = y;
+    const valueY = y + Math.round((secondary ? 26 : 31) * uiScale);
 
-    if (clamped > 0) {
-      const fillW = Math.max(h, width * clamped);
-      ctx.globalAlpha = 0.88;
-      ctx.fillStyle = color;
-      setGlow(color, 10);
-      traceSlantedBox(x, y, fillW, h, h * 0.72);
-      ctx.fill();
+    ctx.font = `bold ${Math.round(13 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.84;
+    ctx.fillStyle = labelColor;
+    setGlow(accent, 10);
+    ctx.fillText(label, x, labelY);
+    clearGlow();
 
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = '#ffffff';
-      traceSlantedBox(x, y, fillW, Math.max(2, h * 0.18), Math.max(2, h * 0.18));
-      ctx.fill();
-      clearGlow();
-    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `bold ${Math.round(valueSize * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = valueColor;
+    setGlow(accent, Math.max(16, valueSize * uiScale * (secondary ? 0.34 : 0.4)));
+    ctx.fillText(value, x, valueY);
+
+    ctx.globalAlpha = secondary ? 0.22 : 0.28;
+    ctx.fillStyle = textBright;
+    ctx.fillText(value, x + Math.max(1, valueSize * uiScale * 0.016), valueY - 1);
+    clearGlow();
+
     ctx.restore();
-    return y + h + 10;
+    return valueY + Math.round(valueSize * uiScale) + Math.round((secondary ? 26 : 34) * uiScale);
   };
 
-  const drawSegmentRow = (x, y, width, count, filledCount, color, label, activeReady = false, labelColor = hudMuted) => {
-    const gap = 10;
-    const segW = (width - gap * (count - 1)) / count;
+  const drawStatusCluster = (x, y, width, count, filledCount, color, label, activeReady = false, labelColor = hudMuted, valueColor = '#ffffff') => {
+    const gap = 12;
+    const indicatorWidth = Math.min(width, 240);
+    const cellW = Math.max(48, Math.floor((indicatorWidth - gap * (count - 1)) / count));
+    const cellH = 16;
+    const pulse = 0.72 + 0.28 * (Math.sin(getNow() * 0.015) * 0.5 + 0.5);
     ctx.save();
-    y = drawHudLabel(label, x, y, labelColor, color, 13, 0.84);
+    const labelY = y;
+    ctx.font = `bold ${Math.round(13 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = labelColor;
+    setGlow(color, 10);
+    ctx.fillText(label, x, labelY);
+    clearGlow();
+
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${Math.round(18 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.94;
+    ctx.fillStyle = valueColor;
+    setGlow(color, activeReady ? 14 : 10);
+    ctx.fillText(String(filledCount), x + indicatorWidth, labelY - 2);
+    clearGlow();
+
+    ctx.textAlign = 'left';
+    const rowY = labelY + Math.round(28 * uiScale);
     for (let i = 0; i < count; i++) {
-      const sx = x + i * (segW + gap);
+      const px = x + i * (cellW + gap);
       const filled = i < filledCount;
-      const isPulse = activeReady && filled && i === filledCount - 1;
-      ctx.globalAlpha = filled ? (isPulse ? 0.95 : 0.82) : 0.34;
-      ctx.fillStyle = filled ? color : hudNavy;
-      if (filled) setGlow(color, isPulse ? 16 : 8);
-      traceSlantedBox(sx, y, segW, 12, 6);
+      const cellAlpha = filled ? (activeReady ? pulse : 0.9) : 0.2;
+
+      ctx.globalAlpha = filled ? cellAlpha * 0.16 : 0.08;
+      ctx.fillStyle = filled ? color : '#101427';
+      traceSlantedBox(px, rowY + 3, cellW, cellH, 6);
       ctx.fill();
+
+      ctx.globalAlpha = filled ? cellAlpha * 0.9 : 0.16;
+      ctx.fillStyle = filled ? color : '#1f2440';
+      if (filled) setGlow(color, activeReady ? 14 : 8);
+      traceSlantedBox(px + 2, rowY + 5, cellW - 4, cellH - 4, 5);
+      ctx.fill();
+
+      if (filled) {
+        ctx.globalAlpha = 0.32 * cellAlpha;
+        ctx.fillStyle = '#ffffff';
+        traceSlantedBox(px + 5, rowY + 7, cellW - 11, 3, 2);
+        ctx.fill();
+      }
       clearGlow();
     }
     ctx.restore();
-    return y + 26;
+    return rowY + cellH + Math.round(18 * uiScale);
   };
+
+  const drawStageReadout = (x, y, width) => {
+    const stageValue = `${Math.min(stage.current, 10)}`;
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    ctx.font = `bold ${Math.round(12 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = scoreLabelColor;
+    setGlow(hudBlue, 10);
+    ctx.fillText('STAGE', x, y);
+    clearGlow();
+
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${Math.round(22 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.94;
+    ctx.fillStyle = textPrimary;
+    setGlow(hudPurple, 12);
+    ctx.fillText(stageValue, x + width, y - 3);
+    clearGlow();
+
+    ctx.restore();
+    return y + Math.round(34 * uiScale);
+  };
+
+  const totalRunMs = STAGE_DURATION * 10;
+  const currentStageIndex = Math.max(0, Math.min(9, stage.current - 1));
+  const runElapsedMs = currentStageIndex * STAGE_DURATION + (STAGE_DURATION - Math.max(0, Math.min(STAGE_DURATION, stage.timer)));
+  const runProgress = Math.max(0, Math.min(1, runElapsedMs / totalRunMs));
+  const scoreFontSize = Math.round((Math.min(52, Math.max(34, Math.floor(barW * 0.22)))) + runProgress * Math.min(8, Math.max(4, barW * 0.025)));
+  const killsFontSize = Math.round(Math.min(46, Math.max(26, Math.floor(barW * 0.17))));
 
   let cy = py + pad;
 
-  cy = drawHudLabel('STAGE', tx, cy, '#7aa8ff', hudColor, 13, 0.82);
-  ctx.font = `bold ${Math.min(34, Math.max(26, Math.floor(barW * 0.14)))}px monospace`;
-  ctx.fillStyle = hudColor;
-  setGlow(hudColor, 14);
-  ctx.fillText(`${stage.current}`, tx, cy);
-  clearGlow();
-  cy += 52;
+  cy = drawArcadeCounter(tx, cy, barW, 'SCORE', player.score.toLocaleString(), scoreLabelColor, scoreGlow, scoreColor, scoreFontSize, false);
+  cy = drawArcadeCounter(tx, cy, barW, 'KILLS', stage.totalKills.toLocaleString(), killsLabelColor, killsGlow, killsColor, killsFontSize, true);
 
-  cy = drawHudLabel('SCORE', tx, cy, '#cfc3ff', scoreGlow, 13, 0.84);
-  ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
-  ctx.fillStyle = scoreColor;
-  setGlow(scoreGlow, 20);
-  ctx.fillText(player.score.toLocaleString(), tx, cy);
-  clearGlow();
-  cy += 48;
+  cy += Math.round(10 * uiScale);
+  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor, livesValueColor);
+  cy += Math.round(2 * uiScale);
+  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASE DROP', player.ultReady, nukeLabelColor, nukeValueColor);
+  cy += Math.round(10 * uiScale);
+  cy = drawStageReadout(tx, cy, Math.min(barW, 240));
 
-  cy = drawHudLabel('KILLS', tx, cy, '#bdaeff', killsGlow, 13, 0.84);
-  ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
-  ctx.fillStyle = killsColor;
-  setGlow(killsGlow, 18);
-  ctx.fillText(String(stage.kills), tx, cy);
-  clearGlow();
-  cy += 48;
-
-  ctx.save();
-  ctx.globalAlpha = chainDimAlpha;
-  cy = drawHudLabel('CHAIN', tx, cy, '#93a6ff', chainColor, 13, 0.84);
-  ctx.font = `bold ${Math.min(28, Math.max(20, Math.floor(barW * 0.11)))}px monospace`;
-  ctx.fillStyle = chainColor;
-  setGlow(chainColor, 12);
-  ctx.fillText(`x${player.chainMultiplier}`, tx, cy);
-  ctx.textAlign = 'right';
-  ctx.font = `bold ${Math.min(46, Math.max(34, Math.floor(barW * 0.2)))}px monospace`;
-  ctx.fillText(String(player.chain).padStart(3, '0'), tx + barW, cy);
-  if (stage.chainBreakFlash > 0) {
-    ctx.globalAlpha = stage.chainBreakFlash;
-    setGlow('#ff3030', 18);
-    ctx.fillStyle = '#ff3030';
-    ctx.fillText(String(stage.chainBreakCount).padStart(3, '0'), tx + barW, cy);
-  }
-  clearGlow();
-  ctx.textAlign = 'left';
-  cy += 44;
-  cy = drawPremiumBar(tx, cy, barW, chainFill, chainBarColor, 12);
-  ctx.restore();
-  cy += 6;
-
-  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor);
-  cy += 6;
-  cy = drawSegmentRow(tx, cy, barW, 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASS DROP', player.ultReady, nukeLabelColor);
-  cy += 6;
-
-  cy = drawHudLabel('HEAT', tx, cy, heatFrac > 0.45 ? heatColor : hudMuted, heatColor, 13, 0.84);
-  if (heatFrac > 0.75) setGlow(heatColor, 10 * heatPulse);
-  cy = drawPremiumBar(tx, cy, barW, heatFrac, heatColor, 14);
-  clearGlow();
-  clearGlow();
+  _drawPlayAreaCorners();
   ctx.restore();
 }
 
@@ -1695,23 +1308,9 @@ function _buildOverlayCache() {
 }
 
 function drawVignetteAndScanlines() {
-  _buildOverlayCache();
-  ctx.drawImage(_vignetteCanvas, PLAY_X, PLAY_Y);
-  ctx.drawImage(_scanlineCanvas, PLAY_X, PLAY_Y);
-
-  if (player.lives === 1) {
-    const cx = PLAY_X + PLAY_W / 2, cy = PLAY_Y + PLAY_H / 2;
-    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(PLAY_W, PLAY_H) * 0.7);
-    rg.addColorStop(0, 'rgba(180,0,0,0.18)');
-    rg.addColorStop(1, 'rgba(180,0,0,0)');
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-    ctx.clip();
-    ctx.fillStyle = rg;
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-    ctx.restore();
-  }
+  // Vignette, scanlines, and near-death red vignette are now handled by
+  // the GPU CRTFilter in pixi-post.js. setNearDeath() is called each frame
+  // from game.js. Nothing to draw here on the Canvas 2D side.
 }
 
 
@@ -1730,7 +1329,7 @@ function drawRuntimeErrorOverlay() {
   ctx.fillStyle = 'rgba(0,0,0,0.88)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ff5555';
-  ctx.font = 'bold 18px monospace';
+  ctx.font = `bold 18px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   const lines = runtimeErrorMessage.split(/\r?\n/).slice(0, 8);
@@ -1740,666 +1339,47 @@ function drawRuntimeErrorOverlay() {
   ctx.restore();
 }
 
-
-const tutorial = {
-  STEP_COMPLETE_HOLD_MS: 450,
-  steps: [
-    { id: 'move', title: 'MOVE', subtitle: 'A / D', focus: null, accent: COLOR_CYAN, minTime: 2200 },
-    { id: 'shoot', title: 'SHOOT', subtitle: 'HOLD J OR MOUSE', focus: null, accent: '#ffffff', minTime: 2800 },
-    { id: 'heat', title: 'SHOOTING BUILDS HEAT', subtitle: 'STOP FIRING TO COOL', focus: 'shipArc', accent: '#ff8800', minTime: 2600 },
-    { id: 'dash', title: 'DASH LEFT / RIGHT', subtitle: 'SPACEBAR + A OR D', focus: null, accent: COLOR_CYAN, minTime: 2600 },
-    { id: 'dashKill', title: 'DASH KILLS', subtitle: 'DASH THROUGH BOTH ENEMIES', focus: null, accent: COLOR_CYAN, minTime: 2400 },
-    { id: 'refund', title: 'DASH COOLS YOU', subtitle: 'DASH TO DUMP HEAT', focus: 'shipArc', accent: '#9be7ff', minTime: 2200 },
-    { id: 'flowState', title: 'FLOW STATE', subtitle: 'FASTER SHOTS\nNO HEAT', focus: 'flowState', accent: '#cc44ff', minTime: 2600 },
-    { id: 'damage', title: 'HIT = FLOW STATE LOST', subtitle: 'LET IT HIT', focus: null, accent: '#ff5544', minTime: 3200 },
-    { id: 'spread', title: 'LASER', subtitle: 'HOLD K OR RIGHT CLICK', focus: null, accent: '#39ff14', minTime: 2200 },
-    { id: 'nuke', title: 'BASS DROP', subtitle: 'PRESS Q\n3 PER RUN', focus: 'nuke', accent: '#a3122a', minTime: 2200 },
-    { id: 'release', title: 'HOLD LANES. MANAGE HEAT. CHASE FLOW STATE.', subtitle: 'GOOD LUCK', focus: null, accent: '#ffffff', minTime: 6200 }
-  ],
-  stepIndex: 0,
-  stepTimer: 0,
-  fadeAlpha: 0,
-  active: false,
-  prevDroneX: 0,
-  prevDroneY: 0,
-  prevBulletCount: 0,
-  prevDashActive: false,
-  prevFlowStateActive: false,
-  stepState: null,
-
-  start() {
-    this.active = true;
-    this.stepIndex = 0;
-    this.stepTimer = 0;
-    this.fadeAlpha = 0;
-    this.prevDroneX = drone.x;
-    this.prevDroneY = drone.y;
-    this.prevBulletCount = 0;
-    this.prevDashActive = false;
-    this.prevFlowStateActive = false;
-    player.lives = 99;
-    player.invincibleTimer = 999999;
-    player.score = 0;
-    stage.kills = 0;
-    stage.totalKills = 0;
-    this._beginStep(0);
-  },
-
-  _clearArena() {
-    shards.reset();
-    bullets.pool = [];
-    bullets.cooldown = 0;
-    enemyBullets.reset();
-    pickups.reset();
-    fragments.pool = [];
-    burstParticles.reset();
-    hitSparks.reset();
-    impactFX.reset();
-    smokeParticles.reset();
-    screenNuke.reset();
-    turretIndicators.reset();
-    streakCallout.reset();
-  },
-
-  _spawnWave(count, opts = {}) {
-    const stats = getStageEnemyStats();
-    const edge = opts.edge ?? 'top';
-    const baseX = opts.baseX ?? (PLAY_X + PLAY_W / 2);
-    const baseY = opts.baseY ?? (PLAY_Y - 34);
-    const spreadY = opts.spreadY ?? 0;
-    const spreadX = opts.spreadX ?? 180;
-    for (let i = 0; i < count; i++) {
-      const offsetY = count === 1 ? 0 : (-spreadY / 2 + (spreadY * i / Math.max(1, count - 1)));
-      const offsetX = count === 1 ? 0 : (-spreadX / 2 + (spreadX * i / Math.max(1, count - 1)));
-      shards.pool.push(shards._makeShard(
-        baseX + offsetX,
-        baseY + offsetY,
-        Object.assign({}, stats, {
-          speed: opts.speed ?? 80,
-          baseHp: opts.hp ?? 1
-        }),
-        !!opts.elite,
-        false,
-        edge
-      ));
-    }
-  },
-
-  _spawnStaticTarget(x, y, hp = 8, elite = false) {
-    const stats = getStageEnemyStats();
-    const target = shards._makeShard(
-      x,
-      y,
-      Object.assign({}, stats, { speed: 0, baseHp: hp }),
-      elite
-    );
-    target.vx = 0;
-    target.vy = 0;
-    target.tutorialStatic = true;
-    shards.pool.push(target);
-  },
-
-  _spawnAltOrb(type, x, y) {
-    pickups.spawnAltFireOrb(x, y, type);
-  },
-
-  _spawnTutorialHitShot() {
-    enemyBullets.fire(drone.x - 110, PLAY_Y + 50, drone.x - 18, drone.y, { isSniper: true });
-    enemyBullets.fire(drone.x + 110, PLAY_Y + 50, drone.x + 18, drone.y, { isSniper: true });
-  },
-
-  _beginStep(index) {
-    this.stepIndex = index;
-    this.stepTimer = 0;
-    this.fadeAlpha = 0;
-    this.stepState = {
-      distanceMoved: 0,
-      shotsFired: 0,
-      dashes: 0,
-      dashLeft: false,
-      dashRight: false,
-      startKills: stage.kills,
-      startLives: player.lives,
-      startHeat: player.heat,
-      startUltUses: player.ultUses,
-      heated: false,
-      completedAt: null,
-      flowStateSeenAt: null,
-      flowStateWaveSpawned: false,
-      damageRespawnTimer: 0,
-      moveZones: [],
-      spreadCollected: false,
-      spreadUsed: false
-    };
-    this.prevDroneX = drone.x;
-    this.prevDroneY = drone.y;
-    this.prevBulletCount = bullets.pool.length;
-    this.prevDashActive = dash.duration > 0;
-    this.prevFlowStateActive = player.flowStateActive;
-
-    this._clearArena();
-    this._setupStep(this.steps[index]);
-  },
-
-  _setupStep(step) {
-    if (!step) return;
-
-    player.hitFlashTimer = 0;
-    player.dashHeatFlashTimer = 0;
-    player.altFireType = null;
-    player.spreadFuel = 0;
-    player.altFireCooldown = 0;
-    player.overheated = false;
-    player.overheatTimer = 0;
-    player.invincibleTimer = step.id === 'damage' ? 0 : 999999;
-
-    const centerY = canvas.height / 2;
-
-    switch (step.id) {
-      case 'move':
-        player.heat = 0;
-        player.flowStateCharge = 0;
-        player.flowStateActive = false;
-        player.flowStateTimer = 0;
-        player.ultCharge = 0;
-        player.ultReady = true;
-        player.ultUses = 3;
-        this.stepState.moveZones = [
-          { x: drone.x - 180, y: drone.y, r: 24, hit: false },
-          { x: drone.x + 180, y: drone.y, r: 24, hit: false }
-        ];
-        break;
-      case 'shoot':
-        this._spawnWave(6, { speed: 74, hp: 1, spreadX: 260, baseY: PLAY_Y - 28 });
-        break;
-      case 'heat':
-        player.heat = 0;
-        break;
-      case 'dash':
-        break;
-      case 'dashKill':
-        this._spawnStaticTarget(PLAY_X + 90, drone.y, 8, false);
-        this._spawnStaticTarget(PLAY_X + PLAY_W - 90, drone.y, 8, false);
-        break;
-      case 'refund':
-        player.heat = 64;
-        this.stepState.startHeat = player.heat;
-        this._spawnWave(3, { baseX: PLAY_X + PLAY_W / 2, speed: 52, hp: 6, spreadX: 220, baseY: PLAY_Y - 24 });
-        break;
-      case 'flowState':
-        player.heat = 0;
-        player.flowStateActive = false;
-        player.flowStateTimer = 0;
-        player.flowStateCharge = 92;
-        this._spawnWave(4, { speed: 88, hp: 1, spreadX: 220, baseY: PLAY_Y - 28 });
-        break;
-      case 'damage':
-        player.heat = 0;
-        player.flowStateCharge = 0;
-        player.flowStateActive = true;
-        player.flowStateTimer = 4000;
-        this.stepState.startLives = player.lives;
-        this.stepState.damageRespawnTimer = 1400;
-        break;
-      case 'spread':
-        player.heat = 0;
-        player.activateAltFire('spread');
-        this.stepState.spreadCollected = true;
-        this._spawnWave(12, { speed: 88, hp: 1, spreadX: 320, baseY: PLAY_Y - 34 });
-        break;
-      case 'nuke':
-        player.heat = 0;
-        player.ultUses = 3;
-        player.ultCharge = 0;
-        player.ultReady = true;
-        this.stepState.startUltUses = player.ultUses;
-        this._spawnWave(8, { speed: 38, hp: 1, spreadX: 320, baseY: PLAY_Y - 30 });
-        break;
-      case 'release':
-        player.heat = 0;
-        break;
-    }
-  },
-
-  _isStepComplete(step) {
-    if (!step) return false;
-    if (this.stepTimer < (step.minTime || 0)) return false;
-    const killsThisStep = stage.kills - this.stepState.startKills;
-
-    switch (step.id) {
-      case 'move': return this.stepState.moveZones.length > 0 && this.stepState.moveZones.every(z => z.hit);
-      case 'shoot': return killsThisStep >= 5;
-      case 'heat': return this.stepState.heated && player.heat <= 15;
-      case 'dash': return this.stepState.dashLeft && this.stepState.dashRight;
-      case 'dashKill': return killsThisStep >= 2 || shards.pool.length === 0;
-      case 'refund': return this.stepState.dashes >= 1 && player.heat <= this.stepState.startHeat - 8;
-      case 'flowState': return this.stepState.flowStateSeenAt !== null && this.stepTimer - this.stepState.flowStateSeenAt >= 5000;
-      case 'damage': return player.lives < this.stepState.startLives && !player.flowStateActive;
-      case 'spread': return this.stepState.spreadCollected && this.stepState.spreadUsed && killsThisStep >= 10;
-      case 'nuke': return player.ultUses < this.stepState.startUltUses && shards.pool.length === 0 && enemyBullets.pool.length === 0;
-      case 'release': return this.stepTimer >= 1500;
-      default: return false;
-    }
-  },
-
-  _drawTutorialLines(text, centerX, centerY, maxWidth, color, glowColor, baseSize) {
-    const paragraphs = String(text || '').split('\n');
-    const lines = [];
-
-    ctx.save();
-    let fontSize = baseSize;
-    for (; fontSize >= 22; fontSize -= 2) {
-      ctx.font = `bold ${fontSize}px monospace`;
-      lines.length = 0;
-      for (const paragraph of paragraphs) {
-        const words = paragraph.split(' ');
-        let current = '';
-        for (const word of words) {
-          const candidate = current ? `${current} ${word}` : word;
-          if (ctx.measureText(candidate).width <= maxWidth || current === '') {
-            current = candidate;
-          } else {
-            lines.push(current);
-            current = word;
-          }
-        }
-        if (current) lines.push(current);
-      }
-      if (lines.length <= 2) break;
-    }
-
-    const lineHeight = fontSize + 6;
-    const totalHeight = lines.length * lineHeight;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.fillStyle = color;
-    setGlow(glowColor, 10);
-    lines.forEach((line, i) => {
-      const y = centerY - totalHeight / 2 + i * lineHeight + lineHeight / 2;
-      ctx.fillText(line, centerX, y);
-    });
-    clearGlow();
-    ctx.restore();
-  },
-
-  _drawFocus(focus, accent) {
-    if (!focus) return;
-    const pulse = 0.55 + 0.45 * (Math.sin(getNow() * 0.01) * 0.5 + 0.5);
-    ctx.save();
-    ctx.globalAlpha = 0.25 + pulse * 0.25;
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    setGlow(accent, 18);
-
-    if (focus === 'ship' || focus === 'shipArc') {
-      ctx.beginPath();
-      ctx.arc(drone.x, drone.y, focus === 'shipArc' ? 34 : 42, 0, Math.PI * 2);
-      ctx.stroke();
-    } else {
-      let x = drone.x - 66, y = drone.y - 34, w = 132, h = 68;
-      if (focus === 'flowState') {
-        const inset = Math.max(18, PLAY_W * 0.06);
-        x = PLAY_X + inset - 10;
-        y = PLAY_Y + PLAY_H - 28;
-        w = PLAY_W - inset * 2 + 20;
-        h = 38;
-      }
-      if (focus === 'fire') {
-        x = drone.x - 86;
-        y = drone.y - 54;
-        w = 172;
-        h = 108;
-      }
-      if (focus === 'altFire') {
-        x = PANEL_X + 18;
-        y = PANEL_Y + 300;
-        w = PANEL_W - 36;
-        h = 96;
-      }
-      if (focus === 'dash') {
-        x = drone.x - 120;
-        y = drone.y - 44;
-        w = 240;
-        h = 88;
-      }
-      if (focus === 'nuke') {
-        x = PANEL_X + 18;
-        y = PANEL_Y + 190;
-        w = PANEL_W - 36;
-        h = 46;
-      }
-      _roundRect(ctx, x, y, w, h, 8);
-      ctx.stroke();
-    }
-
-    clearGlow();
-    ctx.restore();
-  },
-
-  _getTutorialSubtitle(step) {
-    if (!step) return '';
-    if (step.id === 'dash') {
-      return `SPACEBAR + A OR D\nLEFT ${this.stepState.dashLeft ? '1' : '0'} / 1\nRIGHT ${this.stepState.dashRight ? '1' : '0'} / 1`;
-    }
-    if (step.id === 'dashKill') {
-      const killed = Math.max(0, stage.kills - this.stepState.startKills);
-      return `${Math.min(2, killed)} / 2`;
-    }
-    return step.subtitle;
-  },
-
-  update(delta) {
-    if (!this.active) return;
-    const step = this.steps[this.stepIndex];
-    if (!step) { this.finish(); return; }
-
-    this.stepTimer += delta;
-    const entryT = Math.min(1, this.stepTimer / 220);
-    this.fadeAlpha += (entryT - this.fadeAlpha) * 0.22;
-
-    const dx = drone.x - this.prevDroneX;
-    const dy = drone.y - this.prevDroneY;
-    this.stepState.distanceMoved += Math.hypot(dx, dy);
-    this.prevDroneX = drone.x;
-    this.prevDroneY = drone.y;
-
-    const bulletDiff = bullets.pool.length - this.prevBulletCount;
-    if (bulletDiff > 0) this.stepState.shotsFired += bulletDiff;
-    this.prevBulletCount = bullets.pool.length;
-
-    const dashActive = dash.duration > 0;
-    if (dashActive && !this.prevDashActive) {
-      this.stepState.dashes++;
-      if (dash.surgeDir < 0) this.stepState.dashLeft = true;
-      if (dash.surgeDir > 0) this.stepState.dashRight = true;
-    }
-    this.prevDashActive = dashActive;
-
-    if (player.heat >= 45) this.stepState.heated = true;
-    if (step.id === 'move' && this.stepState.moveZones.length > 0) {
-      this.stepState.moveZones.forEach(zone => {
-        if (!zone.hit && Math.hypot(drone.x - zone.x, drone.y - zone.y) <= zone.r + 10) {
-          zone.hit = true;
-          audio.play('menuSelect');
-        }
-      });
-    }
-    if (player.altFireType === 'spread') this.stepState.spreadCollected = true;
-    if (player.altFireType === 'spread' && player.spreadFuel < player.SPREAD_MAX_FUEL) this.stepState.spreadUsed = true;
-
-
-    if (player.flowStateActive && !this.prevFlowStateActive && step.id === 'flowState' && this.stepState.flowStateSeenAt === null) {
-      this.stepState.flowStateSeenAt = this.stepTimer;
-      if (!this.stepState.flowStateWaveSpawned) {
-        this.stepState.flowStateWaveSpawned = true;
-        this._spawnWave(8, { speed: 96, hp: 1, spreadX: 320, baseY: PLAY_Y - 34 });
-      }
-    }
-    if (step.id === 'damage' && player.lives >= this.stepState.startLives) {
-      player.flowStateActive = true;
-      player.flowStateTimer = 999999;
-      player.flowStateCharge = Math.max(player.flowStateCharge, 100);
-      this.stepState.damageRespawnTimer -= delta;
-      if (this.stepState.damageRespawnTimer <= 0 && enemyBullets.pool.length === 0) {
-        this._spawnTutorialHitShot();
-        this.stepState.damageRespawnTimer = 1400;
-      }
-    }
-    this.prevFlowStateActive = player.flowStateActive;
-
-    if (this._isStepComplete(step) && this.stepState.completedAt === null) {
-      this.stepState.completedAt = this.stepTimer;
-      audio.play('menuConfirm');
-    }
-
-    if (this.stepState.completedAt !== null &&
-        this.stepTimer - this.stepState.completedAt >= this.STEP_COMPLETE_HOLD_MS) {
-      if (this.stepIndex >= this.steps.length - 1) this.finish();
-      else this._beginStep(this.stepIndex + 1);
-    }
-  },
-
-  draw() {
-    if (!this.active) return;
-    const step = this.steps[this.stepIndex];
-    if (!step) return;
-    const isReleaseStep = step.id === 'release';
-
-    this._drawFocus(step.focus, step.accent);
-    if (step.id === 'move' && this.stepState.moveZones.length > 0) {
-      ctx.save();
-      this.stepState.moveZones.forEach(zone => {
-        const pulse = 0.55 + 0.45 * (Math.sin(getNow() * 0.012 + zone.x * 0.02) * 0.5 + 0.5);
-        ctx.globalAlpha = zone.hit ? 0.18 : 0.34 + pulse * 0.16;
-        ctx.fillStyle = zone.hit ? 'rgba(49,175,212,0.18)' : 'rgba(49,175,212,0.10)';
-        ctx.strokeStyle = zone.hit ? '#8cf2ff' : COLOR_CYAN;
-        ctx.lineWidth = zone.hit ? 2.5 : 2;
-        setGlow(zone.hit ? '#8cf2ff' : COLOR_CYAN, zone.hit ? 16 : 12);
-        ctx.beginPath();
-        ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(zone.x, zone.y, zone.r * 0.45, 0, Math.PI * 2);
-        ctx.stroke();
-        clearGlow();
-      });
-      ctx.restore();
-    }
-
-    const accent = step.accent || COLOR_CYAN;
-
-    if (isReleaseStep) {
-      const cx = PLAY_X + PLAY_W / 2;
-      const cy = PLAY_Y + PLAY_H * 0.39;
-      const pulse = 0.6 + 0.4 * Math.sin(getNow() * 0.0032);
-      const flicker = 0.9 + 0.1 * Math.sin(getNow() * 0.014) * Math.sin(getNow() * 0.029);
-      const headingSize = Math.round(Math.max(40, Math.min(64, PLAY_W * 0.074)));
-      const subtitleSize = Math.round(Math.max(18, Math.min(26, PLAY_W * 0.03)));
-      const lineW = Math.min(PLAY_W * 0.54, 440);
-      const hudBlue = '#2e3bf0';
-      const hudPurple = '#4216d2';
-      const hudPink = '#dd32b3';
-      const hudHot = '#fb29fd';
-      const hudLite = '#d9d4ff';
-      const titleLines = [
-        'HOLD LANES',
-        'MANAGE HEAT',
-        'CHASE FLOW STATE'
-      ];
-      const drawSpacedLine = (text, y, opts = {}) => {
-        const spacing = opts.spacing ?? Math.max(3, headingSize * 0.05);
-        const alpha = opts.alpha ?? 1;
-        const fill = opts.fill ?? '#ffffff';
-        const glow = opts.glow ?? fill;
-        const blur = opts.blur ?? 0;
-        const dropoutScale = opts.dropoutScale ?? 0;
-        const chars = text.split('');
-        const widths = chars.map(ch => ch === ' ' ? headingSize * 0.4 : ctx.measureText(ch).width);
-        const totalWidth = widths.reduce((sum, width) => sum + width, 0) + spacing * (chars.length - 1);
-        let drawX = cx - totalWidth / 2;
-        ctx.globalAlpha = alpha * this.fadeAlpha;
-        ctx.fillStyle = fill;
-        ctx.shadowColor = glow;
-        ctx.shadowBlur = blur;
-        chars.forEach((ch, idx) => {
-          const charWidth = widths[idx];
-          const charCenter = drawX + charWidth / 2;
-          const noise = 0.8 + 0.2 * (0.5 + 0.5 * Math.sin(getNow() * 0.021 + idx * 0.9));
-          const dropout = ch === ' ' ? 1 : Math.max(0.55, 1 - dropoutScale * flicker * ((idx % 3) === 1 ? 0.45 : 0.18));
-          ctx.globalAlpha = alpha * this.fadeAlpha * noise * dropout;
-          ctx.fillText(ch, charCenter, y);
-          drawX += charWidth + spacing;
-        });
-      };
-
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      ctx.globalAlpha = 0.16 * this.fadeAlpha;
-      ctx.strokeStyle = hudBlue;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(cx - lineW / 2, cy + 58);
-      ctx.lineTo(cx + lineW / 2, cy + 58);
-      ctx.stroke();
-
-      ctx.globalAlpha = 0.1 * this.fadeAlpha;
-      ctx.strokeStyle = hudPink;
-      ctx.beginPath();
-      ctx.moveTo(cx - lineW * 0.32, cy - 96);
-      ctx.lineTo(cx + lineW * 0.32, cy - 96);
-      ctx.stroke();
-
-      ctx.font = `bold ${headingSize}px monospace`;
-      titleLines.forEach((line, i) => {
-        const lineY = cy - 58 + i * 48;
-        drawSpacedLine(line, lineY, {
-          spacing: Math.max(4, headingSize * 0.055),
-          alpha: 0.16 * pulse,
-          fill: hudPurple,
-          glow: hudPurple,
-          blur: 34,
-          dropoutScale: 0.08
-        });
-        drawSpacedLine(line, lineY, {
-          spacing: Math.max(4, headingSize * 0.055),
-          alpha: 0.42 * flicker,
-          fill: hudPink,
-          glow: hudHot,
-          blur: 20,
-          dropoutScale: 0.12
-        });
-        drawSpacedLine(line, lineY, {
-          spacing: Math.max(4, headingSize * 0.055),
-          alpha: 0.98,
-          fill: hudLite,
-          glow: hudBlue,
-          blur: 10,
-          dropoutScale: 0.04
-        });
-      });
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = 'transparent';
-
-      ctx.font = `bold ${subtitleSize}px monospace`;
-      ctx.globalAlpha = 0.92 * this.fadeAlpha;
-      setGlow(hudPink, 12);
-      ctx.fillStyle = hudLite;
-      ctx.fillText(step.subtitle, cx, cy + 96);
-      clearGlow();
-      ctx.restore();
-      return;
-    }
-
-    const panelW = Math.min(PLAY_W - 96, 760);
-    const panelY = PLAY_Y + PLAY_H * 0.35;
-    const hudBlue = '#2e3bf0';
-    const hudPink = '#dd32b3';
-    const hudLite = '#d9d4ff';
-    const accentColor = '#31afd4';
-    const titleColor = '#f4f0ff';
-    const titleGlow = '#31afd4';
-    const subtitleColor = '#e8e2ff';
-
-    ctx.save();
-    ctx.globalAlpha = 0.95 * this.fadeAlpha;
-    const titleBaseSize = step.id === 'heat' ? 48 : 56;
-    const subtitleBaseSize = step.id === 'dash' ? 40 : 44;
-    this._drawTutorialLines(step.title, PLAY_X + PLAY_W / 2, panelY - 22, panelW - 56, titleColor, titleGlow, titleBaseSize);
-    this._drawTutorialLines(this._getTutorialSubtitle(step), PLAY_X + PLAY_W / 2, panelY + 78, panelW - 56, subtitleColor, titleGlow, subtitleBaseSize);
-
-    ctx.font = 'bold 13px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = hudPink;
-    clearGlow();
-    setGlow(hudPink, 8);
-    ctx.fillText(`STEP ${this.stepIndex + 1} / ${this.steps.length}`, PLAY_X + PLAY_W / 2, panelY - 104);
-    clearGlow();
-    ctx.restore();
-  },
-
-  finish() {
-    this.active = false;
-    localStorage.setItem('drone_tutorial_done', '1');
-    _resetAllState();
-    gameState = 'playing';
-  },
-
-  cancel() {
-    this.active = false;
-    _resetAllState();
-    gameState = 'title';
-    titleSelection = 0;
-    titleSelectionChangedAt = getNow();
-    audio.playMusic('title');
+function startScreenTransition(type, onMidpoint, onComplete) {
+  if (typeof pixiPost !== 'undefined' && typeof pixiPost.startTransition === 'function') {
+    const started = pixiPost.startTransition(type, onMidpoint, onComplete);
+    if (started) return true;
   }
-};
-
-function _resetAllState() {
-  player.score = 0;
-  player.dead = false;
-  player.lives = 3;
-  player.flowStateCharge = 0;
-  player.flowStateActive = false;
-  player.flowStateTimer = 0;
-  player.chain = 0;
-  player.chainTimer = 0;
-  player.heat = 0;
-  player.overheated = false;
-  player.overheatTimer = 0;
-  player.hitFlashTimer = 0;
-  player.ultCharge = 0;
-  player.ultReady = true;
-  player.ultUses = 3;
-  player.altFireType = null;
-  player.spreadFuel = 0;
-  player.altFireCooldown = 0;
-  player.invincibleTimer = 0;
-  altFireDropIndex = 0;
-  shards.reset();
-  if (typeof laser !== 'undefined' && laser && typeof laser.reset === 'function') laser.reset();
-  screenNuke.reset();
-  turretIndicators.reset();
-  streakCallout.reset();
-  bullets.pool = [];
-  bullets.cooldown = 0;
-  enemyBullets.reset();
-  pickups.reset();
-  fragments.pool = [];
-  burstParticles.reset();
-  hitSparks.reset();
-  impactFX.reset();
-  smokeParticles.reset();
-
-  stage.reset();
-  drone.init();
-  drone.tilt = 0;
-  dash.reset();
-  stage10WipeProgress = 0;
+  if (typeof onMidpoint === 'function') onMidpoint();
+  if (typeof onComplete === 'function') onComplete();
+  return false;
 }
 
-function startGame() {
-  _resetAllState();
-
-  if (!localStorage.getItem('drone_tutorial_done')) {
+function startTutorialRun() {
+  startScreenTransition('fade', () => {
+    _resetAllState();
     gameState = 'tutorial';
     tutorial.start();
     audio.playMusic('gameplay');
+  });
+}
+
+function openLeaderboardFromTitle() {
+  startScreenTransition('fade', () => {
+    gameState = 'leaderboard';
+    leaderboard.fetchScores();
+  });
+}
+
+function startGame() {
+  if (!localStorage.getItem('drone_tutorial_done')) {
+    startTutorialRun();
     return;
   }
 
-  gameState = 'playing';
-  audio.playMusic('gameplay');
+  startScreenTransition('fade', () => {
+    _resetAllState();
+    gameState = 'playing';
+    audio.playMusic('gameplay');
+  });
 }
 
 function startTutorialFromDevMenu() {
-  _resetAllState();
-  gameState = 'tutorial';
-  tutorial.start();
-  audio.playMusic('gameplay');
+  startTutorialRun();
 }
 
 function updateTitle(delta) {
@@ -2430,14 +1410,8 @@ function updateTitle(delta) {
   if (justPressed['Enter'] || justPressed[' ']) {
     audio.play('menuConfirm');
     if (titleSelection === 0) startGame();
-    else if (titleSelection === 1) {
-      tutorial.start();
-      gameState = 'tutorial';
-      audio.playMusic('gameplay');
-    } else {
-      gameState = 'leaderboard';
-      leaderboard.fetchScores();
-    }
+    else if (titleSelection === 1) startTutorialRun();
+    else openLeaderboardFromTitle();
   }
 }
 
@@ -2457,7 +1431,7 @@ function drawDevMenu() {
 
   // Title
   ctx.save();
-  ctx.font = 'bold 13px monospace';
+  ctx.font = `bold 13px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.letterSpacing = '4px';
   ctx.fillStyle = '#ff3366';
@@ -2486,7 +1460,7 @@ function drawDevMenu() {
   ctx.fillStyle = devFastStage ? 'rgba(0,255,204,0.1)' : 'rgba(255,255,255,0.04)';
   _roundRect(ctx, toggleX, toggleY, toggleW, toggleH, 6);
   ctx.fill(); ctx.stroke();
-  ctx.font = 'bold 11px monospace';
+  ctx.font = `bold 11px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.fillStyle = devFastStage ? '#00ffcc' : 'rgba(255,255,255,0.5)';
   ctx.fillText('FAST STAGE  ' + (devFastStage ? '[ON]' : '[OFF]'), W / 2, toggleY + 25);
@@ -2502,7 +1476,7 @@ function drawDevMenu() {
   ctx.fillStyle = 'rgba(170,85,255,0.1)';
   _roundRect(ctx, tutorialX, tutorialY, tutorialW, tutorialH, 6);
   ctx.fill(); ctx.stroke();
-  ctx.font = 'bold 11px monospace';
+  ctx.font = `bold 11px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#aa55ff';
   ctx.fillText('PLAY TUTORIAL', W / 2, tutorialY + 25);
@@ -2518,7 +1492,7 @@ function drawDevMenu() {
   ctx.fillStyle = 'rgba(255,255,255,0.05)';
   _roundRect(ctx, backX, backY, backW, backH, 6);
   ctx.fill(); ctx.stroke();
-  ctx.font = '11px monospace';
+  ctx.font = `11px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fillText('[ESC]  BACK', W / 2, backY + 23);
@@ -2537,12 +1511,12 @@ function _drawDevBtn(ctx, x, y, w, h, stageNum) {
   _roundRect(ctx, x, y, w, h, 7);
   ctx.fill(); ctx.stroke();
 
-  ctx.font = 'bold 22px monospace';
+  ctx.font = `bold 22px ${UI_DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.fillStyle = col;
   ctx.fillText(stageNum, x + w / 2, y + h / 2 + 4);
 
-  ctx.font = '9px monospace';
+  ctx.font = `9px ${UI_DISPLAY_FONT}`;
   ctx.fillStyle = `rgba(${_hexToRgb(col)},0.6)`;
   ctx.fillText('STAGE', x + w / 2, y + h / 2 - 14);
   ctx.restore();

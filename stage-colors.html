@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>TechnoDrone — Stage Color Reference</title>
+<style>
+  body { background: #050505; color: #fff; font-family: monospace; padding: 40px; margin: 0; }
+  h1 { font-size: 14px; letter-spacing: 0.2em; color: #888; margin-bottom: 32px; }
+  .grid { display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; align-items: center; gap: 16px; }
+  .label { width: 60px; font-size: 12px; color: #555; letter-spacing: 0.1em; }
+  .swatch { width: 120px; height: 48px; border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center; }
+  .swatch-inner { width: 80px; height: 80px; border-radius: 50%; position: absolute; filter: blur(18px); opacity: 0.5; }
+  .swatch-border { position: absolute; inset: 0; border-radius: 4px; border: 1.5px solid rgba(255,255,255,0.08); }
+  .hex { font-size: 10px; color: rgba(255,255,255,0.6); position: relative; z-index: 1; letter-spacing: 0.05em; }
+  .name { font-size: 11px; color: #444; width: 180px; }
+  .tag { font-size: 10px; padding: 2px 8px; border-radius: 2px; letter-spacing: 0.08em; }
+  .tag-enemy { background: rgba(255,255,255,0.06); color: #888; }
+  .tag-elite { background: rgba(255,17,51,0.15); color: #ff1133; }
+  .tag-conflict { background: rgba(100,220,80,0.12); color: #7ed957; border: 1px solid rgba(126,217,87,0.3); }
+  .divider { height: 1px; background: #1a1a1a; margin: 8px 0; }
+  .section-label { font-size: 10px; color: #333; letter-spacing: 0.2em; margin: 20px 0 10px; }
+</style>
+</head>
+<body>
+<h1>STAGE COLOR REFERENCE — TECHNO DRONE</h1>
+
+<div class="section-label">ENEMY COLORS BY STAGE</div>
+<div class="grid" id="grid"></div>
+
+<script>
+const STAGE_ENEMY_COLORS = [
+  { hex: '#f5f7ff', name: 'cold white' },
+  { hex: '#7ed957', name: 'mint green', conflict: true },
+  { hex: '#1f7a5c', name: 'deep forest green', conflict: true },
+  { hex: '#3aa0ff', name: 'electric blue' },
+  { hex: '#003b8e', name: 'deep cobalt blue' },
+  { hex: '#ffd400', name: 'electric yellow' },
+  { hex: '#ff4fa3', name: 'hot pink' },
+  { hex: '#8b5cf6', name: 'late-game purple' },
+  { hex: '#ff7a00', name: 'hot orange' },
+  { hex: '#fb29fd', name: 'neon magenta' },
+];
+
+const ELITE_COLOR = '#ff1133';
+
+const grid = document.getElementById('grid');
+
+STAGE_ENEMY_COLORS.forEach((c, i) => {
+  const stage = i + 1;
+
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  // Stage label
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = `STG ${stage}`;
+  row.appendChild(label);
+
+  // Enemy swatch
+  const swatch = document.createElement('div');
+  swatch.className = 'swatch';
+  swatch.style.background = '#0a0a0a';
+  const inner = document.createElement('div');
+  inner.className = 'swatch-inner';
+  inner.style.background = c.hex;
+  const border = document.createElement('div');
+  border.className = 'swatch-border';
+  border.style.borderColor = c.hex + '44';
+  const hexLabel = document.createElement('div');
+  hexLabel.className = 'hex';
+  hexLabel.textContent = c.hex;
+  hexLabel.style.color = c.hex;
+  swatch.appendChild(inner);
+  swatch.appendChild(border);
+  swatch.appendChild(hexLabel);
+  row.appendChild(swatch);
+
+  // Name
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = c.name;
+  name.style.color = c.hex;
+  name.style.opacity = '0.7';
+  row.appendChild(name);
+
+  // Enemy tag
+  const enemyTag = document.createElement('div');
+  enemyTag.className = c.conflict ? 'tag tag-conflict' : 'tag tag-enemy';
+  enemyTag.textContent = c.conflict ? 'ENEMY — GREEN CONFLICT' : 'ENEMY';
+  row.appendChild(enemyTag);
+
+  // Elite swatch (same for all stages)
+  const eliteSwatch = document.createElement('div');
+  eliteSwatch.className = 'swatch';
+  eliteSwatch.style.background = '#0a0a0a';
+  eliteSwatch.style.width = '80px';
+  const eInner = document.createElement('div');
+  eInner.className = 'swatch-inner';
+  eInner.style.background = ELITE_COLOR;
+  const eBorder = document.createElement('div');
+  eBorder.className = 'swatch-border';
+  eBorder.style.borderColor = ELITE_COLOR + '44';
+  const eHex = document.createElement('div');
+  eHex.className = 'hex';
+  eHex.textContent = ELITE_COLOR;
+  eHex.style.color = ELITE_COLOR;
+  eliteSwatch.appendChild(eInner);
+  eliteSwatch.appendChild(eBorder);
+  eliteSwatch.appendChild(eHex);
+  row.appendChild(eliteSwatch);
+
+  const eliteTag = document.createElement('div');
+  eliteTag.className = 'tag tag-elite';
+  eliteTag.textContent = 'ELITE';
+  row.appendChild(eliteTag);
+
+  grid.appendChild(row);
+
+  if (i === 4 || i === 9) {
+    const div = document.createElement('div');
+    div.className = 'divider';
+    grid.appendChild(div);
+  }
+});
+
+// Kamikaze row
+const kamiRow = document.createElement('div');
+kamiRow.style.marginTop = '32px';
+kamiRow.style.fontSize = '10px';
+kamiRow.style.color = '#444';
+kamiRow.style.letterSpacing = '0.15em';
+kamiRow.textContent = 'SPECIAL TYPES';
+grid.appendChild(kamiRow);
+
+const specials = [
+  { hex: '#ff6600', label: 'KAMIKAZE (current render)', tag: 'ORANGE — NEEDS FIX', tagColor: '#ff6600' },
+  { hex: '#ff2200', label: 'KAMIKAZE (target, s.color)', tag: 'RED — TARGET', tagColor: '#ff2200' },
+  { hex: '#00eeff', label: 'SHIELD DRONE', tag: 'CYAN', tagColor: '#00eeff' },
+  { hex: '#39ff14', label: 'LASER PICKUP', tag: 'GREEN — GOOD ✓', tagColor: '#39ff14' },
+  { hex: '#ff2244', label: 'GATE TARGET', tag: 'RED — BAD ✓', tagColor: '#ff2244' },
+];
+
+specials.forEach(s => {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '8px';
+
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.style.width = '60px';
+  row.appendChild(label);
+
+  const swatch = document.createElement('div');
+  swatch.className = 'swatch';
+  swatch.style.background = '#0a0a0a';
+  const inner = document.createElement('div');
+  inner.className = 'swatch-inner';
+  inner.style.background = s.hex;
+  const border = document.createElement('div');
+  border.className = 'swatch-border';
+  border.style.borderColor = s.hex + '44';
+  const hexLabel = document.createElement('div');
+  hexLabel.className = 'hex';
+  hexLabel.textContent = s.hex;
+  hexLabel.style.color = s.hex;
+  swatch.appendChild(inner);
+  swatch.appendChild(border);
+  swatch.appendChild(hexLabel);
+  row.appendChild(swatch);
+
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = s.label;
+  name.style.color = s.hex;
+  name.style.opacity = '0.7';
+  row.appendChild(name);
+
+  const tag = document.createElement('div');
+  tag.className = 'tag';
+  tag.style.background = s.tagColor + '18';
+  tag.style.color = s.tagColor;
+  tag.style.border = `1px solid ${s.tagColor}33`;
+  tag.textContent = s.tag;
+  row.appendChild(tag);
+
+  grid.appendChild(row);
+});
+</script>
+</body>
+</html>

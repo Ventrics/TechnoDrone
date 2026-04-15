@@ -1,9 +1,4 @@
 let altFireDropIndex = 0;
-let mechanicAssignment = {};
-
-function buildMechanicAssignment() {
-  return MECHANIC_ASSIGNMENT;
-}
 
 function getActiveMechanics() {
   return new Set(MECHANIC_ASSIGNMENT[stage.current] || []);
@@ -11,19 +6,23 @@ function getActiveMechanics() {
 
 function getEnemyScoreValue(enemy) {
   if (!enemy) return 10;
-  if (typeof enemy === 'boolean') return enemy ? 50 : 10;
+  if (typeof enemy === 'boolean') return enemy ? 100 : 10;
+  if (enemy.isBonusRing) return 0;
   if (enemy.isGatePiece) return 0;
-  if (enemy.isElite) return 50;
-
-  const size = enemy.size || 14;
-  if (size <= 12.5) return 18;
-  if (size <= 15.5) return 16;
-  if (size <= 19.5) return 14;
-  if (size <= 24) return 12;
-  return 9;
+  // Bonus — jackpot
+  if (enemy.isJackpot)      return 500;
+  // Top tier — high-threat specialists
+  if (enemy.isTurret)      return 200;
+  if (enemy.isShieldDrone) return 175;
+  if (enemy.isKamikaze)    return 150;
+  // Mid tier
+  if (enemy.isElite)       return 100;
+  // Base tier — size-based shard value (bigger = more points, they're tankier)
+  const size = enemy.size || 20;
+  if (size <= 23) return 10;   // small (20px base)
+  if (size <= 29) return 18;   // medium (26px base)
+  return 25;                   // large (32px base)
 }
-
-mechanicAssignment = buildMechanicAssignment();
 
 const stage = {
   current: 1,
@@ -36,34 +35,30 @@ const stage = {
   shakeIntensity: 0,
   slowmoTimer: 0,
   labelScale: 1,
-  chainBreakFlash: 0,
-  chainBreakCount: 0,
   obstacleActive: false,
   obstacleTimer: 0,
   obstacleTransitionTimer: 0,
   obstacleSpawnTimer: 0,
   obstacleRowsSpawned: 0,
   obstacleTriggered: false,
+  finaleActive: false,
+  finaleClearDelay: 0,
   OBSTACLE_TRIGGER_AT: 20000,
-  OBSTACLE_DURATION: 5000,
-  OBSTACLE_TRANSITION_MS: 500,
-  OBSTACLE_ROW_INTERVAL: 900,
+  OBSTACLE_DURATION: 5200,
+  OBSTACLE_TRANSITION_MS: 450,
+  BONUS_RING_SCORE: 200,
 
   onKill(enemy, fromNuke = false) {
+    if (enemy && enemy.isBonusRing) return 0;
     if (enemy && enemy.isGatePiece) return 0;
     const isElite = !!(typeof enemy === 'boolean' ? enemy : enemy?.isElite);
     const scoreValue = getEnemyScoreValue(enemy);
     this.kills++;
     this.totalKills++;
     player.onKill(isElite, fromNuke);
-    const scoreAward = fromNuke ? 0 : scoreValue * player.chainMultiplier;
+    const scoreAward = fromNuke ? 0 : scoreValue;
     if (!fromNuke) {
       player.score += scoreAward;
-      const c = player.chain;
-      if (c === 75) streakCallout.show('MAXIMUM CHAIN', '#ffffff', 2200, 3.2, 'top');
-      else if (c === 50) streakCallout.show('CHAIN x4', '#ff33cc', 1800, 2.8, 'top');
-      else if (c === 30) streakCallout.show('CHAIN x3', '#aa88ff', 1600, 2.6, 'top');
-      else if (c === 15) streakCallout.show('CHAIN x2', '#31afd4', 1400, 2.4, 'top');
     }
 
     if (isElite && !fromNuke) {
@@ -74,7 +69,7 @@ const stage = {
       pickups.spawnEliteOrb(ex, ey, type);
     }
 
-    if (this.totalKills > 0 && this.totalKills % 100 === 0) {
+    if (this.totalKills > 0 && this.totalKills % 200 === 0) {
       player.lives = Math.min(5, player.lives + 1);
       audio.play('chainMilestone');
       streakCallout.show(`${this.totalKills} KILLS  +LIFE`, '#ff3366', 1500, 2.2, 'top');
@@ -84,16 +79,6 @@ const stage = {
     }
 
     return scoreAward;
-  },
-
-  onChainBroken(count, reason = 'damage') {
-    this.chainBreakFlash = 1;
-    this.chainBreakCount = count;
-    if (reason === 'damage') {
-      streakCallout.show('CHAIN LOST', '#ff3030', 1400, 2.6, 'center');
-    } else if (reason === 'timeout') {
-      streakCallout.show('CHAIN EXPIRED', '#ff6600', 1200, 2.2, 'center');
-    }
   },
 
   _isObstacleStage() {
@@ -108,10 +93,9 @@ const stage = {
     this.obstacleRowsSpawned = 0;
     this.obstacleTriggered = true;
 
-    streakCallout.show('SHOOT RED', '#ff4a4a', 1700, 2.6, 'center');
-    streakCallout.show('DASH THE GAP', '#31afd4', 1700, 2.1, 'top');
-    if (typeof spawnObstacleGateRow === 'function') {
-      spawnObstacleGateRow(this.obstacleRowsSpawned++);
+    streakCallout.show('BONUS RINGS', '#f5c542', 1700, 2.5, 'center');
+    if (typeof startBonusRingWave === 'function') {
+      startBonusRingWave();
     }
   },
 
@@ -121,42 +105,65 @@ const stage = {
     this.obstacleTransitionTimer = 0;
     this.obstacleSpawnTimer = 0;
     this.obstacleRowsSpawned = 0;
+    if (typeof stopBonusRingWave === 'function') stopBonusRingWave();
+  },
+
+  onBonusRingCollect(ring) {
+    const scoreAward = ring?.scoreValue || this.BONUS_RING_SCORE;
+    player.score += scoreAward;
+    return scoreAward;
+  },
+
+  _spawnFinalEnemy() {
+    if (typeof spawnShard !== 'function') return;
+    const finalEnemy = spawnShard();
+    finalEnemy.isElite = true;
+    finalEnemy.isFinaleEnemy = true;
+    finalEnemy.x = PLAY_X + PLAY_W * 0.5;
+    finalEnemy.y = PLAY_Y - 42;
+    finalEnemy.vx = 0;
+    finalEnemy.vy = 170;
+    finalEnemy.size = Math.max(finalEnemy.size * 1.65, 34);
+    finalEnemy.color = '#f5f7ff';
+    finalEnemy.hp = 22;
+    finalEnemy.maxHp = 22;
+    finalEnemy.turnRate = 0.78;
+    finalEnemy.lifetime = 40000;
+    if (typeof makeRegularPolygon === 'function') {
+      finalEnemy.pts = makeRegularPolygon(finalEnemy.size, 8, Math.PI / 8);
+    }
+    shards.pool.push(finalEnemy);
+  },
+
+  _beginFinale() {
+    this._endObstacleWave();
+    if (typeof clearBonusRings === 'function') clearBonusRings();
+    this.finaleActive = true;
+    this.finaleClearDelay = 0;
+    this.obstacleActive = true; // freeze further enemy spawning while current threats remain active
+    this.obstacleTriggered = true;
+    this.timer = 0;
+    this._spawnFinalEnemy();
+    if (typeof beginMissionCompleteSequence === 'function') beginMissionCompleteSequence();
   },
 
   _advance() {
     this._endObstacleWave();
     if (this.current === 10) {
-      shards.reset();
-      bullets.pool = [];
-      bullets.cooldown = 0;
-      enemyBullets.reset();
-      pickups.reset();
-      fragments.pool = [];
-      burstParticles.reset();
-      hitSparks.reset();
-      impactFX.reset();
-      smokeParticles.reset();
-      screenNuke.reset();
-      turretIndicators.reset();
-      dash.reset();
-      player.altFireType = null;
-      player.spreadFuel = 0;
-      player.flowStateActive = false;
-      player.flowStateTimer = 0;
-      player.flowStateCharge = player.FLOW_STATE_MAX;
-      gameState = 'win';
-      audio.playMusic('win');
+      this._beginFinale();
       return;
     }
     this.current++;
     audio.play('stageAdvance');
     this.kills = 0;
     this.timer = STAGE_DURATION;
+    // Remove any live jackpot and arm a new one for the incoming stage
+    shards.pool = shards.pool.filter(s => !s.isJackpot);
+    shards.jackpotSpawned = false;
+    shards.jackpotSpawnAt = 5000 + Math.random() * 20000;
     COLOR_BG = STAGE_BG_COLORS[this.current - 1];
+    pixiPost.setStage(this.current);
 
-    if (this.current === 5 || this.current === 8) {
-      player.lives = Math.min(4, player.lives + 1);
-    }
 
     if (this.current > furthestStage) {
       furthestStage = this.current;
@@ -177,7 +184,6 @@ const stage = {
       this.shakeTimer -= delta;
       this.shakeIntensity = 8 * (this.shakeTimer / 1500);
     }
-    if (this.chainBreakFlash > 0) this.chainBreakFlash = Math.max(0, this.chainBreakFlash - delta / 500);
     if (this.slowmoTimer > 0) this.slowmoTimer -= delta;
 
     if (gameState === 'playing') {
@@ -188,20 +194,24 @@ const stage = {
 
       if (this.obstacleActive) {
         this.obstacleTimer -= delta;
-        if (this.obstacleTransitionTimer > 0) this.obstacleTransitionTimer -= delta;
-        this.obstacleSpawnTimer += delta;
-        if (this.obstacleRowsSpawned < 5 && this.obstacleSpawnTimer >= this.OBSTACLE_ROW_INTERVAL) {
-          this.obstacleSpawnTimer = 0;
-          if (typeof spawnObstacleGateRow === 'function') {
-            spawnObstacleGateRow(this.obstacleRowsSpawned++);
-          }
-        }
-        if (this.obstacleTimer <= 0) {
+        if (typeof updateBonusRingWave === 'function') updateBonusRingWave(delta);
+        if (this.obstacleTimer <= 0 || (typeof isBonusRingWaveComplete === 'function' && isBonusRingWaveComplete())) {
           this._endObstacleWave();
         }
       }
       this.timer -= delta;
       if (this.timer <= 0) this._advance();
+    }
+
+    if (gameState === 'finale') {
+      const liveEnemies = shards.pool.filter(s => !s.isGatePiece && !s.isBonusRing).length;
+      const arenaClear = liveEnemies === 0 && enemyBullets.pool.length === 0 && !screenNuke.active;
+      this.finaleClearDelay = arenaClear ? this.finaleClearDelay + delta : 0;
+      if (this.finaleClearDelay >= 550 && typeof startMissionCompleteScreen === 'function') {
+        this.finaleActive = false;
+        this.obstacleActive = false;
+        startMissionCompleteScreen();
+      }
     }
 
 
@@ -215,10 +225,6 @@ const stage = {
     }
   },
 
-  drawFlash() {
-    return;
-  },
-
   reset() {
     this.current = 1;
     this.kills = 0;
@@ -229,15 +235,16 @@ const stage = {
     this.shakeIntensity = 0;
     this.slowmoTimer = 0;
     this.labelScale = 1;
-    this.chainBreakFlash = 0;
-    this.chainBreakCount = 0;
     this.obstacleActive = false;
     this.obstacleTimer = 0;
     this.obstacleTransitionTimer = 0;
     this.obstacleSpawnTimer = 0;
     this.obstacleRowsSpawned = 0;
     this.obstacleTriggered = false;
+    this.finaleActive = false;
+    this.finaleClearDelay = 0;
     COLOR_BG = STAGE_BG_COLORS[0];
-    mechanicAssignment = buildMechanicAssignment();
+    pixiPost.setStage(1);
+    pixiPost.setFlowState(false);
   }
 };

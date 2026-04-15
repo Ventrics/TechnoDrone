@@ -1,7 +1,18 @@
+// ─── PixiJS Player Rendering Utilities ───────────────────────────────────────
+function _hexIntP(hex) { return parseInt(hex.replace('#', ''), 16); }
+function _pixi_playerLayer() {
+  return (typeof pixiPost !== 'undefined' && typeof pixiPost.getPlayerLayer === 'function')
+    ? pixiPost.getPlayerLayer() : null;
+}
+function _pixi_fxLayerP() {
+  return (typeof pixiPost !== 'undefined' && typeof pixiPost.getFxLayer === 'function')
+    ? pixiPost.getFxLayer() : null;
+}
+
 const dash = {
   cooldown: 0,
-  COOLDOWN_MS: 1200,
-  COOLDOWN_OFFENSIVE: 800,
+  COOLDOWN_MS: 1020,
+  COOLDOWN_OFFENSIVE: 680,
   duration: 0,
   DURATION_MS: 320,
   HEAT_REFUND: 35,
@@ -63,11 +74,48 @@ const drone = {
   rotorAngle: 0,
   tilt: 0,
 
-  get speed() { return player.flowStateActive ? 336 : 280; },
+  get speed() { return player.flowStateActive ? 436.8 : 364; },
 
   init() {
     this.x = PLAY_X + PLAY_W / 2;
     this.y = PLAY_Y + PLAY_H - 60;
+    this._renderX = this.x;
+    this._renderY = this.y;
+    this._renderTilt = this.tilt;
+    this._drawX = this.x;
+    this._drawY = this.y;
+  },
+
+  _syncVisualPose() {
+    if (typeof this._renderX !== 'number' || typeof this._renderY !== 'number') {
+      this._renderX = this.x;
+      this._renderY = this.y;
+      this._renderTilt = this.tilt;
+      this._drawX = this.x;
+      this._drawY = this.y;
+    }
+
+    const prevDrawX = this._drawX ?? this._renderX;
+    const prevDrawY = this._drawY ?? this._renderY;
+    const followRate = dash.duration > 0 ? 0.5 : 0.42;
+
+    this._renderX += (this.x - this._renderX) * followRate;
+    this._renderY += (this.y - this._renderY) * 0.45;
+
+    const lagX = this.x - this._renderX;
+    const visualLean = Math.max(-0.07, Math.min(0.07, lagX * 0.005));
+    this._renderTilt += ((this.tilt + visualLean) - this._renderTilt) * 0.32;
+
+    const drawMotion = Math.hypot(this._renderX - prevDrawX, this._renderY - prevDrawY);
+    this._drawX = this._renderX;
+    this._drawY = this._renderY;
+
+    return {
+      drawX: this._renderX,
+      drawY: this._renderY,
+      drawTilt: this._renderTilt,
+      drawMotion,
+    };
   },
 
   update(delta) {
@@ -101,7 +149,331 @@ const drone = {
     this.rotorAngle += (moving ? 0.45 : 0.25);
   },
 
+  // ─── PixiJS Gfx ────────────────────────────────────────────────────────────
+  initGfx() {
+    if (typeof PIXI === 'undefined') return;
+    const layer = _pixi_playerLayer();
+    if (!layer) return;
+
+    // Root container — positioned + rotated each frame
+    this._gfxRoot = new PIXI.Container();
+
+    // Layer stack (bottom → top)
+    this._gGlow       = new PIXI.Graphics(); // outer glow ellipse
+    this._gEngines    = new PIXI.Graphics(); // exhaust trail + engine glow + core dots
+    this._gHull       = new PIXI.Graphics(); // hull fill + 4 stroke passes
+    this._gFlow       = new PIXI.Graphics(); // flow state outer bloom stroke
+    this._gPanel      = new PIXI.Graphics(); // internal panel lines
+    this._gHeat       = new PIXI.Graphics(); // heat arc + flow timer ring
+    this._gTip        = new PIXI.Graphics(); // tip glow dots
+    this._gNearDeath  = new PIXI.Graphics(); // near-death dashed scars
+
+    [this._gGlow, this._gEngines, this._gHull, this._gFlow,
+     this._gPanel, this._gHeat, this._gTip, this._gNearDeath
+    ].forEach(g => this._gfxRoot.addChild(g));
+
+    // Dash afterimages + wake — separate from root (no rotation)
+    this._gDashDecals = new PIXI.Graphics();
+
+    layer.addChild(this._gfxRoot);
+    layer.addChild(this._gDashDecals);
+  },
+
+  syncGfx() {
+    const layer = _pixi_playerLayer();
+    if (!layer || !this._gfxRoot || typeof PIXI === 'undefined') return;
+
+    const visualPose = this._syncVisualPose();
+    const now      = getNow();
+    const nearDeath = player.lives === 1 && !player.dead;
+    const dashActive = dash.duration > 0;
+    const dashPhase  = dashActive ? 1 - dash.duration / dash.DURATION_MS : 0;
+    const hullFlicker = nearDeath
+      ? (Math.sin(now * 0.018) > 0.3 ? 1 : 0.65)
+      : 1;
+    const motionFrac = Math.max(0, Math.min(1, visualPose.drawMotion / 10));
+    const engineDrive = Math.min(1,
+      motionFrac * 1.25 +
+      (dashActive ? 0.28 : 0) +
+      (player.flowStateActive ? 0.32 : 0)
+    );
+    const panelColor = player.overheated ? '#ff6633'
+      : nearDeath ? '#ff3300'
+      : player.flowStateActive ? '#d94cff'
+      : COLOR_CYAN;
+    const panelCI = _hexIntP(panelColor);
+
+    // Position + rotation of root container
+    this._gfxRoot.x = visualPose.drawX;
+    this._gfxRoot.y = visualPose.drawY;
+    this._gfxRoot.rotation = -Math.PI / 2 + visualPose.drawTilt;
+
+    // ── Glow ellipse ─────────────────────────────────────────────────────────
+    {
+      const g = this._gGlow; g.clear();
+      const shipGlow = player.overheated ? '#ff3300'
+        : nearDeath ? '#ff3300'
+        : player.flowStateActive ? '#cc44ff'
+        : (dashActive ? '#ffffff' : COLOR_CYAN);
+      const shipGlowAlpha = player.overheated ? 0.28 : nearDeath ? 0.24
+        : player.flowStateActive ? 0.26 : (dashActive ? 0.22 : 0.14);
+      const shipGlowR = player.overheated ? 30
+        : nearDeath ? 18 + 6 * Math.abs(Math.sin(now * 0.012))
+        : player.flowStateActive ? 30
+        : (dashActive ? 24 : 18);
+      const ci = _hexIntP(shipGlow);
+      g.beginFill(ci, shipGlowAlpha * hullFlicker);
+      g.drawEllipse(0, 0, 20, 14);
+      g.endFill();
+    }
+
+    // ── Engine exhausts (2 nozzles) ──────────────────────────────────────────
+    {
+      const g = this._gEngines; g.clear();
+      const ePulse = (0.55 + 0.45 * Math.sin(now * 0.008 + this.rotorAngle * 0.5)) * (0.7 + engineDrive * 0.7);
+      const exhaustColor = player.flowStateActive ? '#e040fb' : COLOR_CYAN;
+      const exhaustCI = _hexIntP(exhaustColor);
+      const exhaustLen = 10 + engineDrive * 18;
+
+      [{ x: -13, y: -5 }, { x: -13, y: 5 }].forEach(ep => {
+        // Exhaust trail
+        g.lineStyle(1 + engineDrive * 0.7, panelCI, (0.14 + engineDrive * 0.16));
+        g.moveTo(ep.x - 2, ep.y);
+        g.lineTo(ep.x - exhaustLen, ep.y);
+
+        // Glow ellipse
+        g.beginFill(exhaustCI, (player.flowStateActive ? 0.28 : 0.18) * ePulse);
+        g.drawEllipse(ep.x - engineDrive * 3, ep.y, 8 + engineDrive * 3, 5 + engineDrive * 2);
+        g.endFill();
+
+        // Inner bright ellipse
+        g.beginFill(exhaustCI, (player.flowStateActive ? 0.58 : 0.42) * ePulse);
+        g.drawEllipse(ep.x - engineDrive * 2, ep.y, 4.5 + engineDrive * 1.5, 3.5 + engineDrive);
+        g.endFill();
+
+        // White core dot
+        g.beginFill(0xffffff, 0.8 * ePulse);
+        g.drawCircle(ep.x - engineDrive, ep.y, 1.8 + engineDrive * 0.6);
+        g.endFill();
+
+        // Overheat flame shapes
+        if (player.overheated) {
+          const fp = 0.55 + 0.45 * (Math.sin(now * 0.024 + ep.y * 0.4) * 0.5 + 0.5);
+          g.beginFill(0xff3300, 0.28 + fp * 0.22);
+          g.moveTo(ep.x - 10, ep.y);
+          g.quadraticCurveTo(ep.x - 22 - fp * 12, ep.y - 4.5, ep.x - 30 - fp * 12, ep.y);
+          g.quadraticCurveTo(ep.x - 22 - fp * 10, ep.y + 4.5, ep.x - 10, ep.y);
+          g.closePath();
+          g.endFill();
+          g.beginFill(0xff8800, 0.5 + fp * 0.18);
+          g.moveTo(ep.x - 9, ep.y);
+          g.quadraticCurveTo(ep.x - 18 - fp * 8, ep.y - 2.8, ep.x - 24 - fp * 8, ep.y);
+          g.quadraticCurveTo(ep.x - 18 - fp * 7, ep.y + 2.8, ep.x - 9, ep.y);
+          g.closePath();
+          g.endFill();
+        }
+      });
+    }
+
+    // ── Hull (4-pass polygon) ─────────────────────────────────────────────────
+    {
+      const g = this._gHull; g.clear();
+      const hull = [
+        { x: 26, y: 0 }, { x: -4, y: -15 }, { x: -14, y: -6 },
+        { x: -12, y: 0 }, { x: -14, y: 6 },  { x: -4, y: 15 },
+      ];
+      const hullFlat = hull.flatMap(p => [p.x, p.y]);
+      const cyanCI = _hexIntP(COLOR_CYAN);
+
+      // Pass 1: dim fill (no stroke)
+      g.lineStyle(0);
+      g.beginFill(cyanCI, 0.06 * hullFlicker);
+      g.drawPolygon(hullFlat);
+      g.endFill();
+
+      // Pass 2: wide corona stroke (no fill)
+      g.lineStyle(3, cyanCI, 0.28 * hullFlicker);
+      g.drawPolygon(hullFlat);
+
+      // Pass 3: mid stroke
+      g.lineStyle(1.2, cyanCI, 0.65 * hullFlicker);
+      g.drawPolygon(hullFlat);
+
+      // Pass 4: white cap
+      g.lineStyle(0.6, 0xffffff, hullFlicker);
+      g.drawPolygon(hullFlat);
+    }
+
+    // ── Flow state outer bloom stroke ─────────────────────────────────────────
+    {
+      const g = this._gFlow; g.clear();
+      if (player.flowStateActive) {
+        const hullF = [26,0, -4,-15, -14,-6, -12,0, -14,6, -4,15];
+        const odPulse = 0.6 + 0.4 * (Math.sin(now * 0.018) * 0.5 + 0.5);
+        g.lineStyle(5, 0xcc44ff, 0.35 * odPulse * hullFlicker);
+        g.drawPolygon(hullF);
+      }
+    }
+
+    // ── Panel lines + near-death scars ────────────────────────────────────────
+    {
+      const g = this._gPanel; g.clear();
+      const pinkCI = _hexIntP(COLOR_PINK);
+      g.lineStyle(0.75, pinkCI, 0.38);
+      g.moveTo(20, 0); g.lineTo(-3, -8);
+      g.moveTo(20, 0); g.lineTo(-3, 8);
+      g.moveTo(-3, -8); g.lineTo(-3, 8);
+
+      g.lineStyle(0.85, panelCI, (0.14 + engineDrive * 0.12) * hullFlicker);
+      g.moveTo(12, 0); g.lineTo(-9, 0);
+      g.moveTo(5, -8); g.lineTo(-10, -4);
+      g.moveTo(5, 8); g.lineTo(-10, 4);
+    }
+
+    {
+      const g = this._gNearDeath; g.clear();
+      if (nearDeath) {
+        g.lineStyle(0.8, 0xff2200, 0.4 * hullFlicker);
+        // Dashed scarring — approximate with short line segments
+        g.moveTo(8, -3); g.lineTo(11, -1); // gap
+        g.moveTo(12, 0); g.lineTo(14, 2);
+        g.moveTo(6, 3); g.lineTo(9, 1);
+        g.moveTo(10, -1.5); g.lineTo(11, -1);
+        g.moveTo(-2, -1); g.lineTo(1, 1);
+        g.moveTo(2, 2); g.lineTo(4, 4);
+      }
+    }
+
+    // ── Heat arc + flow timer ring ────────────────────────────────────────────
+    {
+      const g = this._gHeat; g.clear();
+      const heatFrac = player.heat / 100;
+      const heatColor = player.overheated ? '#ff0000'
+        : heatFrac > 0.8 ? '#ff3300'
+        : heatFrac > 0.5 ? '#ff8800'
+        : COLOR_CYAN;
+      const arcR = 26;
+      const arcStart = Math.PI;
+      const arcSpan  = Math.PI * 2;
+
+      // Background track
+      g.lineStyle(2.5, 0x333333, 0.12);
+      g.arc(0, 0, arcR, arcStart, arcStart + arcSpan);
+
+      // Dash heat flash ring
+      if (player.dashHeatFlashTimer > 0) {
+        const ff = player.dashHeatFlashTimer / player.DASH_HEAT_FLASH_MS;
+        g.lineStyle(4.5, 0x9be7ff, 0.18 + ff * 0.55);
+        g.arc(0, 0, arcR + 1.5, arcStart, arcStart + arcSpan);
+      }
+
+      // Heat fill arc
+      if (heatFrac > 0) {
+        const heatAlpha = player.overheated
+          ? 0.35 + 0.65 * (Math.sin(now * 0.015) * 0.5 + 0.5)
+          : 0.9;
+        g.lineStyle(2.5, _hexIntP(heatColor), heatAlpha);
+        g.arc(0, 0, arcR, arcStart, arcStart + arcSpan * heatFrac);
+      }
+
+      // Flow state timer ring (outer, separate)
+      if (player.flowStateActive) {
+        const flowFrac = Math.max(0, player.flowStateTimer / player.FLOW_STATE_DURATION);
+        const flowPulse = 0.55 + 0.35 * (Math.sin(now * 0.02) * 0.5 + 0.5);
+        g.lineStyle(2, 0xcc44ff, flowPulse);
+        g.arc(0, 0, arcR + 6, arcStart, arcStart + arcSpan * flowFrac);
+      }
+    }
+
+    // ── Tip glow (weapon mount) ────────────────────────────────────────────────
+    {
+      const g = this._gTip; g.clear();
+      let tipColor = COLOR_PINK;
+      let tipBase = 18;
+      if (player.flowStateActive || player.altFireType) {
+        const p = Math.sin(now * 0.025) * 0.5 + 0.5;
+        tipColor = player.flowStateActive
+          ? (p > 0.5 ? '#cc44ff' : '#9be7ff')
+          : player.altFireType === 'laser' ? '#39ff14'
+          : (p > 0.5 ? '#ff44cc' : '#ffffff');
+        tipBase = player.flowStateActive ? 34 + p * 24 : 26 + p * 20;
+      }
+      const tipCI = _hexIntP(tipColor);
+      // Outer glow
+      g.beginFill(tipCI, 0.18); g.drawCircle(26, 0, 6); g.endFill();
+      // Bright core
+      g.beginFill(tipCI, 0.5); g.drawCircle(26, 0, 3.5); g.endFill();
+      // White hot
+      g.beginFill(0xffffff, 1); g.drawCircle(26, 0, 1.6); g.endFill();
+
+      // Flow state wing gun glow points
+      if (player.flowStateActive) {
+        const wPulse = 0.5 + 0.5 * (Math.sin(now * 0.022) * 0.5 + 0.5);
+        [-14, 14].forEach(wy => {
+          g.beginFill(tipCI, 0.18 * wPulse); g.drawCircle(14, wy, 5); g.endFill();
+          g.beginFill(tipCI, 0.55 * wPulse); g.drawCircle(14, wy, 2.8); g.endFill();
+          g.beginFill(0xffffff, 1); g.drawCircle(14, wy, 1.2); g.endFill();
+        });
+      }
+    }
+
+    // ── Dash afterimages + wake (world-space, no hull rotation) ───────────────
+    {
+      const g = this._gDashDecals; g.clear();
+      if (dashActive) {
+        const ghostIntensity = Math.pow(Math.max(0, 1 - dashPhase * 1.4), 1.2);
+        const ghostHull = [
+          { x: 22, y: 0 }, { x: -5, y: -14 }, { x: -14, y: -7 },
+          { x: -10, y: 0 }, { x: -14, y: 7 },  { x: -5, y: 14 },
+        ];
+        const cosR  = Math.cos(-Math.PI / 2 + this.tilt);
+        const sinR  = Math.sin(-Math.PI / 2 + this.tilt);
+        const xform = (p) => ({
+          x: p.x * cosR - p.y * sinR,
+          y: p.x * sinR + p.y * cosR
+        });
+
+        for (let gi = 1; gi <= 4; gi++) {
+          const trailOffset = gi * 18;
+          const gx = visualPose.drawX - dash.surgeDir * trailOffset;
+          const scale = 1 - gi * 0.05;
+          const ga = (0.24 / gi) * ghostIntensity;
+          g.beginFill(gi === 1 ? 0xb4f5ff : 0x41d9ff, ga * 0.30);
+          ghostHull.forEach((p, idx) => {
+            const tp = xform({ x: p.x * scale, y: p.y * scale });
+            idx === 0 ? g.moveTo(gx + tp.x, visualPose.drawY + tp.y) : g.lineTo(gx + tp.x, visualPose.drawY + tp.y);
+          });
+          g.closePath(); g.endFill();
+
+          const strokeA = (0.34 / gi) * ghostIntensity;
+          g.lineStyle(gi === 1 ? 1.4 : 1, gi === 1 ? 0xd5f6ff : 0x7ae7ff, strokeA);
+          ghostHull.forEach((p, idx) => {
+            const tp = xform({ x: p.x * scale, y: p.y * scale });
+            idx === 0 ? g.moveTo(gx + tp.x, visualPose.drawY + tp.y) : g.lineTo(gx + tp.x, visualPose.drawY + tp.y);
+          });
+          g.closePath();
+        }
+
+        // Wake ellipse
+        const wakeIntensity = Math.max(0, 1 - dashPhase * 1.15);
+        const wakeLen = 44 + wakeIntensity * 20;
+        const wakeH   = 14 + wakeIntensity * 4;
+        const wakeX   = visualPose.drawX - dash.surgeDir * (26 + wakeLen * 0.5);
+        g.beginFill(dash.surgeDir > 0 ? 0xb4f5ff : 0x41d9ff, 0.55 * wakeIntensity * 0.18);
+        g.drawEllipse(wakeX, visualPose.drawY, wakeLen / 2, wakeH);
+        g.endFill();
+      }
+    }
+  },
+
   draw() {
+    const layer = _pixi_playerLayer();
+    if (layer) {
+      if (!this._gfxRoot) this.initGfx();
+      if (this._gfxRoot) { this.syncGfx(); return; }
+    }
+    // ── Canvas2D fallback — active until scene manager provides getPlayerLayer() ──
+    const visualPose = this._syncVisualPose();
     const now = getNow();
     const nearDeath = player.lives === 1 && !player.dead;
     const dashActive = dash.duration > 0;
@@ -109,10 +481,7 @@ const drone = {
     const hullFlicker  = nearDeath
       ? (Math.sin(now * 0.018) > 0.3 ? 1 : 0.65)
       : 1;
-    const prevDrawX    = this._drawX ?? this.x;
-    const prevDrawY    = this._drawY ?? this.y;
-    const drawMotion   = Math.hypot(this.x - prevDrawX, this.y - prevDrawY);
-    const motionFrac   = Math.max(0, Math.min(1, drawMotion / 10));
+    const motionFrac   = Math.max(0, Math.min(1, visualPose.drawMotion / 10));
     const engineDrive  = Math.min(1,
       motionFrac * 1.25 +
       (dashActive ? 0.28 : 0) +
@@ -124,9 +493,9 @@ const drone = {
       : COLOR_CYAN;
 
     ctx.save();
-    ctx.translate(this.x, this.y);
+    ctx.translate(visualPose.drawX, visualPose.drawY);
     ctx.rotate(-Math.PI / 2); // point upward (top-down orientation)
-    ctx.rotate(this.tilt);
+    ctx.rotate(visualPose.drawTilt);
     {
       const shipGlow = player.overheated ? '#ff3300'
         : nearDeath ? '#ff3300'
@@ -224,12 +593,12 @@ const drone = {
     });
 
     const hull = [
-      { x: 22, y: 0 },
-      { x: -5, y: -14 },
-      { x: -14, y: -7 },
-      { x: -10, y: 0 },
-      { x: -14, y: 7 },
-      { x: -5, y: 14 },
+      { x: 26, y: 0 },
+      { x: -4, y: -15 },
+      { x: -14, y: -6 },
+      { x: -12, y: 0 },
+      { x: -14, y: 6 },
+      { x: -4, y: 15 },
     ];
     const tracePath = () => {
       ctx.beginPath();
@@ -247,7 +616,7 @@ const drone = {
     ctx.shadowColor = COLOR_CYAN;
     ctx.shadowBlur = 32;
     ctx.strokeStyle = COLOR_CYAN;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
     ctx.stroke();
 
@@ -256,7 +625,7 @@ const drone = {
     ctx.shadowColor = COLOR_CYAN;
     ctx.shadowBlur = 12;
     ctx.strokeStyle = COLOR_CYAN;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
     tracePath();
@@ -264,7 +633,7 @@ const drone = {
     ctx.shadowColor = '#ffffff';
     ctx.shadowBlur = 5;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 0.6;
     ctx.stroke();
 
     // Flow State ship ascension — outer magenta bloom layered on hull
@@ -287,9 +656,9 @@ const drone = {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(16, 0); ctx.lineTo(-3, -7);
-    ctx.moveTo(16, 0); ctx.lineTo(-3, 7);
-    ctx.moveTo(-3, -7); ctx.lineTo(-3, 7);
+    ctx.moveTo(20, 0); ctx.lineTo(-3, -8);
+    ctx.moveTo(20, 0); ctx.lineTo(-3, 8);
+    ctx.moveTo(-3, -8); ctx.lineTo(-3, 8);
     ctx.stroke();
 
     if (nearDeath) {
@@ -323,11 +692,8 @@ const drone = {
 
     // Heat arc around ship
     {
-      const heatFrac = player.flowStateActive
-        ? Math.max(0, player.flowStateTimer / player.FLOW_STATE_DURATION)
-        : player.heat / 100;
-      const heatColor = player.flowStateActive ? '#cc44ff'
-        : player.overheated ? '#ff0000'
+      const heatFrac = player.heat / 100;
+      const heatColor = player.overheated ? '#ff0000'
         : heatFrac > 0.8 ? '#ff3300'
         : heatFrac > 0.5 ? '#ff8800'
         : COLOR_CYAN;
@@ -364,18 +730,32 @@ const drone = {
 
       // Filled heat arc
       if (heatFrac > 0) {
-        if (player.flowStateActive) {
-          ctx.globalAlpha = 0.55 + 0.35 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5);
-        } else if (player.overheated) {
+        if (player.overheated) {
           ctx.globalAlpha = 0.35 + 0.65 * (Math.sin(getNow() * 0.015) * 0.5 + 0.5);
         } else {
           ctx.globalAlpha = 0.9;
         }
         ctx.strokeStyle = heatColor;
         ctx.shadowColor = heatColor;
-        ctx.shadowBlur = player.flowStateActive ? 16 : 8;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(0, 0, arcRadius, arcStart, arcStart + arcSpan * heatFrac);
+        ctx.stroke();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+      }
+
+      // Flow State timer ring — separate outer arc so heat stays readable
+      if (player.flowStateActive) {
+        const flowFrac = Math.max(0, player.flowStateTimer / player.FLOW_STATE_DURATION);
+        const flowPulse = 0.55 + 0.35 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5);
+        ctx.globalAlpha = flowPulse;
+        ctx.strokeStyle = '#cc44ff';
+        ctx.shadowColor = '#cc44ff';
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, arcRadius + 6, arcStart, arcStart + arcSpan * flowFrac);
         ctx.stroke();
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
@@ -389,7 +769,7 @@ const drone = {
     if (player.flowStateActive || player.altFireType) {
       const p = Math.sin(now * 0.025) * 0.5 + 0.5;
       tipColor = player.flowStateActive ? (p > 0.5 ? '#cc44ff' : '#9be7ff')
-        : player.altFireType === 'spread' ? '#39ff14'
+        : player.altFireType === 'laser' ? '#39ff14'
         : (p > 0.5 ? '#ff44cc' : '#ffffff');
       tipBase = player.flowStateActive ? 34 + p * 24 : 26 + p * 20;
     }
@@ -398,7 +778,7 @@ const drone = {
     ctx.shadowBlur = tipBase * 2.2;
     ctx.fillStyle = tipColor;
     ctx.beginPath();
-    ctx.arc(22, 0, 6, 0, Math.PI * 2);
+    ctx.arc(26, 0, 6, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 0.5;
@@ -406,7 +786,7 @@ const drone = {
     ctx.shadowBlur = tipBase;
     ctx.fillStyle = tipColor;
     ctx.beginPath();
-    ctx.arc(22, 0, 3.5, 0, Math.PI * 2);
+    ctx.arc(26, 0, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 1;
@@ -414,8 +794,36 @@ const drone = {
     ctx.shadowBlur = 6;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(22, 0, 1.6, 0, Math.PI * 2);
+    ctx.arc(26, 0, 1.6, 0, Math.PI * 2);
     ctx.fill();
+
+    // Flow state dual wing gun glow points — match bullet spawn positions
+    if (player.flowStateActive) {
+      const wPulse = 0.5 + 0.5 * (Math.sin(now * 0.022) * 0.5 + 0.5);
+      [-14, 14].forEach(wy => {
+        ctx.globalAlpha = 0.18 * wPulse;
+        ctx.shadowColor = tipColor;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = tipColor;
+        ctx.beginPath();
+        ctx.arc(14, wy, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 0.55 * wPulse;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(14, wy, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 5;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(14, wy, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
 
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -430,12 +838,12 @@ const drone = {
       ];
       for (let g = 1; g <= 4; g++) {
         const trailOffset = g * 18;
-        const gx = this.x - dash.surgeDir * trailOffset;
+        const gx = visualPose.drawX - dash.surgeDir * trailOffset;
         const scale = 1 - g * 0.05;
         ctx.save();
-        ctx.translate(gx, this.y);
+        ctx.translate(gx, visualPose.drawY);
         ctx.rotate(-Math.PI / 2);
-        ctx.rotate(this.tilt);
+        ctx.rotate(visualPose.drawTilt);
         ctx.scale(scale, scale);
         ctx.globalAlpha = (0.24 / g) * ghostIntensity;
         ctx.fillStyle = g === 1 ? 'rgba(180, 245, 255, 0.30)' : 'rgba(65, 217, 255, 0.18)';
@@ -471,9 +879,9 @@ const drone = {
       const wakeIntensity = Math.max(0, 1 - dashPhase * 1.15);
       const wakeLen = 44 + wakeIntensity * 20;
       const wakeH = 14 + wakeIntensity * 4;
-      const wakeX = this.x - dash.surgeDir * (26 + wakeLen * 0.5);
+      const wakeX = visualPose.drawX - dash.surgeDir * (26 + wakeLen * 0.5);
       ctx.save();
-      ctx.translate(wakeX, this.y);
+      ctx.translate(wakeX, visualPose.drawY);
       const wake = ctx.createLinearGradient(-wakeLen / 2, 0, wakeLen / 2, 0);
       if (dash.surgeDir > 0) {
         wake.addColorStop(0, 'rgba(65,217,255,0.00)');
@@ -491,9 +899,6 @@ const drone = {
       ctx.fill();
       ctx.restore();
     }
-
-    this._drawX = this.x;
-    this._drawY = this.y;
   }
 };
 
@@ -502,13 +907,14 @@ drone.init();
 const player = {
   score: 0,
   dead: false,
+  deathPresentationPending: false,
   lives: 3,
   deathMessage: '',
   invincibleTimer: 0,
   INVINCIBLE_DURATION: 300,
   altFireType: null,
-  spreadFuel: 0,
-  SPREAD_MAX_FUEL: 100,
+  laserFuel: 0,
+  LASER_MAX_FUEL: 100,
 
   altFireCooldown: 0,
   ALT_FIRE_COOLDOWN: 5000,
@@ -530,28 +936,11 @@ const player = {
   flowStateTimer: 0,
   FLOW_STATE_DURATION: 7500,
   flowStateActivationFlash: 0,
-  chain: 0,
-  chainTimer: 0,
 
   ultCharge: 0,
   ULT_MAX: 45,
   ultReady: true,
   ultUses: 3,
-
-  get chainMultiplier() {
-    if (this.chain >= 75) return 5;
-    if (this.chain >= 50) return 4;
-    if (this.chain >= 30) return 3;
-    if (this.chain >= 15) return 2;
-    return 1;
-  },
-
-  get chainWindow() {
-    if (this.chain >= 50) return 1200;
-    if (this.chain >= 30) return 1500;
-    if (this.chain >= 15) return 2000;
-    return 2500;
-  },
 
   get effectiveDamage() {
     let dmg = 1.2 + (stage.current - 1) * 0.45;
@@ -569,28 +958,28 @@ const player = {
   activateAltFire(type) {
     this.altFireType = type;
     this.altFireCooldown = this.ALT_FIRE_COOLDOWN;
-    if (type === 'spread') {
-      this.spreadFuel = this.SPREAD_MAX_FUEL;
+    if (type === 'laser') {
+      this.laserFuel = this.LASER_MAX_FUEL;
     }
   },
 
   hit() {
     if (this.dead || this.invincibleTimer > 0) return;
 
-    const brokenChain = this.chain;
-    this.chain = 0;
-    this.chainTimer = 0;
-    if (brokenChain >= 15) stage.onChainBroken(brokenChain, 'damage');
-
-    this.flowStateCharge = 0;
-    this.flowStateActive = false;
-    this.flowStateTimer = 0;
+    if (this.flowStateActive) {
+      // Deactivate flow state — losing it mid-state is the dramatic penalty
+      this.flowStateActive = false;
+      this.flowStateTimer = 0;
+      pixiPost.setFlowState(false);
+    }
     this.lives--;
     this.invincibleTimer = this.INVINCIBLE_DURATION;
     this.hitFlashTimer = this.HIT_FLASH_MS;
+    pixiPost.triggerHit();
 
     if (this.lives <= 0) {
       this.dead = true;
+      this.deathPresentationPending = true;
       audio.play('playerDeath');
       audio.playMusic('death');
       const isHighScore = this.score > save.highScore;
@@ -601,14 +990,24 @@ const player = {
       save.runs.push({ score: this.score, kills: stage.totalKills });
       if (save.runs.length > 10) save.runs.shift();
       writeSave();
+      if (typeof pixiPost !== 'undefined' && typeof pixiPost.triggerDeath === 'function') {
+        pixiPost.triggerDeath();
+      }
+
+      const savedName = this.score > 0 ? loadPlayerName() : '';
+      const revealDeathState = () => {
+        this.deathPresentationPending = false;
+        if (this.score > 0 && !savedName) {
+          gameState = 'nameEntry';
+        }
+      };
+      startScreenTransition('glitch', revealDeathState);
 
       if (this.score > 0) {
-        const savedName = loadPlayerName();
         if (savedName) {
           leaderboard.submitScore(this.score, stage.totalKills);
         } else {
           nameEntry.name = '';
-          gameState = 'nameEntry';
         }
       }
     } else {
@@ -625,14 +1024,6 @@ const player = {
     if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - delta);
     if (this.dashHeatFlashTimer > 0) this.dashHeatFlashTimer = Math.max(0, this.dashHeatFlashTimer - delta);
     if (this.flowStateActivationFlash > 0) this.flowStateActivationFlash = Math.max(0, this.flowStateActivationFlash - delta);
-    if (this.chainTimer > 0) {
-      this.chainTimer = Math.max(0, this.chainTimer - delta);
-      if (this.chainTimer <= 0) {
-        const brokenChain = this.chain;
-        this.chain = 0;
-        if (brokenChain >= 15) stage.onChainBroken(brokenChain, 'timeout');
-      }
-    }
     const nearDeath = this.lives === 1 && !this.dead;
 
     const dt = delta / 1000;
@@ -655,11 +1046,11 @@ const player = {
     }
 
     if (nearDeath && Math.random() < 0.15 && typeof smokeParticles !== 'undefined') {
-      smokeParticles.spawn(this.x - 8, this.y, '#444444');
+      smokeParticles.spawn(drone.x - 8, drone.y, '#444444');
     }
 
-    if (this.altFireType === 'spread' && this.spreadFuel <= 0) {
-      this.spreadFuel = 0;
+    if (this.altFireType === 'laser' && this.laserFuel <= 0) {
+      this.laserFuel = 0;
       this.altFireType = null;
     }
 
@@ -670,6 +1061,7 @@ const player = {
         this.flowStateActive = false;
         this.flowStateTimer = 0;
         audio.play('flowStateEnd');
+        pixiPost.setFlowState(false);
       }
     } else if (this.flowStateCharge >= this.FLOW_STATE_MAX) {
       this.flowStateActive = true;
@@ -678,14 +1070,11 @@ const player = {
       this.flowStateActivationFlash = 420;
       audio.play('flowStateActivate');
       streakCallout.showFlowState();
+      pixiPost.setFlowState(true);
     }
   },
 
   onKill(isElite = false, fromNuke = false) {
-    if (!fromNuke) {
-      this.chain++;
-      this.chainTimer = this.chainWindow;
-    }
     if (!this.flowStateActive) {
       const s = stage.current;
       const stageScale = s <= 2 ? 0.5 : s <= 4 ? 0.75 : 1.0;
