@@ -35,13 +35,6 @@ const starField = {
   _pixiLayerContainers: [],
   _pixiBoundsKey: '',
 
-  _shouldDrawAurora() {
-    const inActivePlayState = typeof gameState !== 'undefined' &&
-      (gameState === 'playing' || gameState === 'tutorial');
-    const playerAlive = typeof player === 'undefined' || !player.dead;
-    return inActivePlayState && playerAlive;
-  },
-
   init() {
     this.layers = [
       { count: 60, speed: 18, minR: 0.3, maxR: 0.6, alpha: 0.22, twinkle: false },
@@ -64,44 +57,6 @@ const starField = {
         });
       }
     });
-
-    // Aurora atmosphere - two slow drifting curtains of color.
-    // cx / width / amp are fractions of PLAY_W for resolution-independence.
-    // Dual-frequency wave motion keeps the shape organic and non-repeating.
-    this.aurora = [
-      {
-        cx: 0.26, width: 0.30, amp: 0.10,
-        freq: 3.2, freq2: 1.7,
-        phase: 0.0, phase2: 0.0,
-        phaseSpeed: 0.00025, phase2Speed: 0.00014,
-        rgb: [55, 18, 110],
-        alpha: 0.12,
-      },
-      {
-        cx: 0.48, width: 0.24, amp: 0.06,
-        freq: 2.8, freq2: 1.5,
-        phase: Math.PI * 0.35, phase2: Math.PI * 0.18,
-        phaseSpeed: 0.00018, phase2Speed: 0.00011,
-        rgb: [55, 18, 110],
-        alpha: 0.055,
-      },
-      {
-        cx: 0.74, width: 0.28, amp: 0.09,
-        freq: 3.9, freq2: 2.1,
-        phase: Math.PI, phase2: Math.PI * 0.6,
-        phaseSpeed: 0.00022, phase2Speed: 0.00013,
-        rgb: [0, 80, 90],
-        alpha: 0.10,
-      },
-      {
-        cx: 0.62, width: 0.22, amp: 0.05,
-        freq: 2.5, freq2: 1.3,
-        phase: Math.PI * 1.2, phase2: Math.PI * 0.9,
-        phaseSpeed: 0.00016, phase2Speed: 0.00009,
-        rgb: [0, 80, 90],
-        alpha: 0.045,
-      },
-    ];
 
     this._ensurePixiScene(true);
     this._syncPixiScene();
@@ -201,105 +156,6 @@ const starField = {
     });
   },
 
-  _drawAuroraUnderlay() {
-    const leftWash = ctx.createRadialGradient(
-      PLAY_X + PLAY_W * 0.30,
-      PLAY_Y + PLAY_H * 0.54,
-      0,
-      PLAY_X + PLAY_W * 0.30,
-      PLAY_Y + PLAY_H * 0.54,
-      PLAY_W * 0.72
-    );
-    leftWash.addColorStop(0, 'rgba(55,18,110,0.115)');
-    leftWash.addColorStop(0.42, 'rgba(55,18,110,0.062)');
-    leftWash.addColorStop(1, 'rgba(55,18,110,0)');
-    ctx.fillStyle = leftWash;
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-
-    const rightWash = ctx.createRadialGradient(
-      PLAY_X + PLAY_W * 0.74,
-      PLAY_Y + PLAY_H * 0.50,
-      0,
-      PLAY_X + PLAY_W * 0.74,
-      PLAY_Y + PLAY_H * 0.50,
-      PLAY_W * 0.68
-    );
-    rightWash.addColorStop(0, 'rgba(0,80,90,0.105)');
-    rightWash.addColorStop(0.45, 'rgba(0,80,90,0.055)');
-    rightWash.addColorStop(1, 'rgba(0,80,90,0)');
-    ctx.fillStyle = rightWash;
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-
-    const topVeil = ctx.createLinearGradient(0, PLAY_Y, 0, PLAY_Y + PLAY_H * 0.82);
-    topVeil.addColorStop(0, 'rgba(28,10,58,0.055)');
-    topVeil.addColorStop(0.38, 'rgba(12,26,36,0.040)');
-    topVeil.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = topVeil;
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-
-    const centerBreath = ctx.createRadialGradient(
-      PLAY_X + PLAY_W * 0.50,
-      PLAY_Y + PLAY_H * 0.44,
-      0,
-      PLAY_X + PLAY_W * 0.50,
-      PLAY_Y + PLAY_H * 0.44,
-      PLAY_W * 0.48
-    );
-    centerBreath.addColorStop(0, 'rgba(20,22,36,0.045)');
-    centerBreath.addColorStop(1, 'rgba(20,22,36,0)');
-    ctx.fillStyle = centerBreath;
-    ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-  },
-
-  // Draw a single aurora band using horizontal-gradient slices.
-  // Each slice is a trapezoid with a transparent-to-color-to-transparent
-  // gradient so there are no hard edges.
-  _drawAuroraBand(band) {
-    const [r, g, b] = band.rgb;
-    const slices = 30;
-    const auroraH = PLAY_H * 0.94;
-    const bandWidth = band.width * PLAY_W;
-
-    for (let i = 0; i < slices; i++) {
-      const t0 = i / slices;
-      const t1 = (i + 1) / slices;
-      const y0 = PLAY_Y + t0 * auroraH;
-      const y1 = PLAY_Y + t1 * auroraH;
-
-      const wave = t =>
-        Math.sin(t * band.freq + band.phase) * band.amp * PLAY_W +
-        Math.sin(t * band.freq2 + band.phase2) * band.amp * PLAY_W * 0.45;
-
-      const cx0 = PLAY_X + band.cx * PLAY_W + wave(t0);
-      const cx1 = PLAY_X + band.cx * PLAY_W + wave(t1);
-      const cx = (cx0 + cx1) * 0.5;
-
-      const tMid = (t0 + t1) * 0.5;
-      const envelope = Math.pow(Math.sin(Math.PI * tMid), 0.48);
-      const topFade = 0.65 + (1 - tMid) * 0.35;
-      const alpha = band.alpha * envelope * topFade;
-      if (alpha < 0.003) continue;
-
-      const grad = ctx.createLinearGradient(cx - bandWidth, 0, cx + bandWidth, 0);
-      grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
-      grad.addColorStop(0.22, `rgba(${r},${g},${b},${(alpha * 0.45).toFixed(3)})`);
-      grad.addColorStop(0.38, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-      grad.addColorStop(0.5, `rgba(${r},${g},${b},${(alpha * 1.4).toFixed(3)})`);
-      grad.addColorStop(0.62, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-      grad.addColorStop(0.78, `rgba(${r},${g},${b},${(alpha * 0.45).toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-
-      ctx.beginPath();
-      ctx.moveTo(cx0 - bandWidth, y0);
-      ctx.lineTo(cx0 + bandWidth, y0);
-      ctx.lineTo(cx1 + bandWidth, y1);
-      ctx.lineTo(cx1 - bandWidth, y1);
-      ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
-    }
-  },
-
   update(delta) {
     const dt = delta / 1000;
     const { speedMult } = getStarStageMultipliers();
@@ -328,29 +184,10 @@ const starField = {
       this.streaks = [];
     }
 
-    if (this.aurora) {
-      this.aurora.forEach(band => {
-        band.phase += band.phaseSpeed * delta;
-        band.phase2 += band.phase2Speed * delta;
-      });
-    }
-
     this._syncPixiScene();
   },
 
   draw() {
-    const shouldDrawAurora = this._shouldDrawAurora();
-
-    if (shouldDrawAurora && this.aurora) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-      ctx.clip();
-      this._drawAuroraUnderlay();
-      this.aurora.forEach(band => this._drawAuroraBand(band));
-      ctx.restore();
-    }
-
     ctx.globalAlpha = 1;
   },
 };

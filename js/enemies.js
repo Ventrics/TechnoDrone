@@ -196,10 +196,12 @@ function getBonusRingPattern(stageNumber = stage.current) {
 }
 
 function createBonusRing(x, y, opts = {}) {
+  const size = opts.size || 30;
   return {
     x, y,
-    size: opts.size || 30,
+    size,
     innerRadius: opts.innerRadius || 18,
+    pickupRadius: opts.pickupRadius || size * 1.24,
     color: opts.color || '#f5c542',
     glowColor: opts.glowColor || '#fff1a6',
     vx: 0,
@@ -276,12 +278,32 @@ function clearBonusRings() {
   shards.pool = shards.pool.filter(s => !s.isBonusRing);
 }
 
+function getBonusRingPickupRadius(ring) {
+  return ring.pickupRadius || ring.size * 1.24;
+}
+
+function getBonusRingContactPoint(ring) {
+  const dx = drone.x - ring.x;
+  const dy = drone.y - ring.y;
+  const dist = Math.hypot(dx, dy);
+  const nx = dist > 0.001 ? dx / dist : 0;
+  const ny = dist > 0.001 ? dy / dist : 1;
+  const radius = getBonusRingPickupRadius(ring);
+  return {
+    x: ring.x + nx * radius,
+    y: ring.y + ny * radius,
+    nx,
+    ny,
+  };
+}
+
 function collectBonusRing(ring) {
   const idx = shards.pool.indexOf(ring);
   if (idx >= 0) shards.pool.splice(idx, 1);
   const scoreAward = stage.onBonusRingCollect(ring);
+  const contact = getBonusRingContactPoint(ring);
   audio.play('enemyHit');
-  hitSparks.emit(ring.x, ring.y, -1, 0, ring.color);
+  hitSparks.emit(contact.x, contact.y, contact.nx, contact.ny, ring.glowColor || ring.color);
   impactFX.onHit(ring.x, ring.y, ring.color);
   pickups.popups.push({
     x: ring.x,
@@ -2479,10 +2501,12 @@ function getPlayerBulletCollisionSegment(b) {
   const vx = Math.cos(angle);
   const vy = Math.sin(angle);
   const bodyLen = b.laser ? b.len * 0.95 : b.flowState ? b.len * 0.5 : b.len * 0.6;
-  const radius = Math.max(2.6, (b.hitRadius || 8) * (b.laser ? 0.48 : b.flowState ? 0.5 : 0.42));
+  const prevX = typeof b.prevX === 'number' ? b.prevX : b.x;
+  const prevY = typeof b.prevY === 'number' ? b.prevY : b.y;
+  const radius = Math.max(3.4, (b.hitRadius || 8) * (b.laser ? 0.5 : b.flowState ? 0.54 : 0.5));
   return {
-    ax: b.x - vx * bodyLen,
-    ay: b.y - vy * bodyLen,
+    ax: prevX - vx * bodyLen,
+    ay: prevY - vy * bodyLen,
     bx: b.x,
     by: b.y,
     radius
@@ -2663,7 +2687,7 @@ function checkCollisions() {
     const bodyR = s.isTurret ? s.size * 2.5 : s.size * 0.75;
     const polygonPoints = usesPolygonCollision(s) ? getShardPolygonWorldPoints(s) : null;
     const playerHit = s.isBonusRing
-      ? circlesTouch(s.x, s.y, s.innerRadius, drone.x, drone.y, 14)
+      ? circlesTouch(s.x, s.y, getBonusRingPickupRadius(s), drone.x, drone.y, 14)
       : s.isGatePiece
       ? rectCircleTouch(drone.x, drone.y, 14, s.x, s.y, s.gateWidth, s.gateHeight)
       : polygonPoints

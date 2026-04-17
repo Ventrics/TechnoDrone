@@ -983,13 +983,10 @@ const player = {
       audio.play('playerDeath');
       audio.playMusic('death');
       const isHighScore = this.score > save.highScore;
-      if (isHighScore) save.highScore = this.score;
       this.deathMessage = isHighScore
         ? 'LETS GOOOOOO'
         : DEATH_TAUNTS[Math.floor(Math.random() * DEATH_TAUNTS.length)];
-      save.runs.push({ score: this.score, kills: stage.totalKills });
-      if (save.runs.length > 10) save.runs.shift();
-      writeSave();
+      recordRunResult(this.score, stage.totalKills);
       if (typeof pixiPost !== 'undefined' && typeof pixiPost.triggerDeath === 'function') {
         pixiPost.triggerDeath();
       }

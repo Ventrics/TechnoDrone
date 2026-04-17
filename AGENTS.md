@@ -70,6 +70,13 @@
 | Title start flow and tutorial boot | `js/ui.js` | `startGame()` / tutorial start |
 | Mechanic assignment per stage | `js/constants.js` | `MECHANIC_ASSIGNMENT` |
 
+## Feel Guardrails
+- The current gameplay feel is a protected baseline. Treat responsiveness, shot satisfaction, and collision honesty as higher priority than atmospheric visuals.
+- The playfield should stay clean and fast. Do not add heavy ambient overlays, aurora passes, fog layers, or similar fill effects during active gameplay unless the user explicitly asks for them again and they are verified to preserve feel on a typical laptop.
+- Bullet-to-enemy collision should favor what the player sees. The current player-bullet collision uses a swept previous-frame-to-current-frame segment so fast shots do not visually clip through rotated shard edges.
+- If a change makes the game feel even slightly softer, mushier, or less precise, treat that as a regression even if the frame drop looks small on paper.
+- When testing visual ideas, prefer reversible, isolated changes and remove them quickly if they trade away snap.
+
 ## Rendering Architecture — READ THIS FIRST
 
 The game uses a **two-canvas compositor** as of 2026-04-14. This changes where rendering happens and what is safe to touch.
@@ -120,6 +127,8 @@ The game uses a **two-canvas compositor** as of 2026-04-14. This changes where r
 - `constants.js` is for balance/config data, not runtime behavior.
 - `ui.js` contains both presentation and menu/tutorial flow. Do not move combat systems there.
 - `game.js` owns the main loop and frame composition.
+- Preserve the current gameplay feel before chasing presentation upgrades. Responsiveness and trustworthy hit detection outrank atmosphere.
+- Check `QA_CHECKLIST.md` before pushing gameplay, menu, UI, score, or persistence changes.
 - Check `GAME_PLAN.md` before adding or removing mechanics.
 - Check `DESIGN.md` before changing visuals.
 - Check `FLOWSTATE.md` before changing Flow State behavior or presentation.

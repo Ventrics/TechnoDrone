@@ -143,6 +143,8 @@ It should not replace the timer as the main progression rule.
 4. Avoid duplicate HUD signals.
 5. Darkness or blackout effects do not belong in this game.
 6. Visual intensity should not come at the cost of combat readability.
+7. Gameplay feel is a protected baseline: if a visual or presentation change makes motion, shooting, or reactions feel softer, that change should be treated as a regression.
+8. Bullet collisions should match the visible shot path, especially against rotated shard silhouettes. Honest hits matter more than decorative atmosphere.
 
 ## What Not To Add Back
 - Kill-quota stage advancement
@@ -150,6 +152,7 @@ It should not replace the timer as the main progression rule.
 - Redundant HUD heat bars
 - Old placeholder hazard systems that are no longer in use
 - Full-screen darkness/blackout effects
+- Heavy playfield atmosphere passes that compromise responsiveness or make the game feel slower
 
 ## Current Reality Check
 These are true of the current codebase and should shape future work:

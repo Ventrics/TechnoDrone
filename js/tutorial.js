@@ -792,6 +792,7 @@ const tutorial = {
     startScreenTransition('fade', () => {
       _resetAllState();
       gameState = 'title';
+      titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
       titleSelection = 0;
       titleSelectionChangedAt = getNow();
       audio.playMusic('title');

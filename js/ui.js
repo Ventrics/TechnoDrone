@@ -679,6 +679,21 @@ function drawTitleScreen() {
   ctx.fillStyle = horizonGlow;
   ctx.fillRect(0, horizonY - 18, W, 42);
 
+  // Horizon scan beam — drifts slowly downward through the grid
+  {
+    const beamY = horizonY + (H - horizonY) * titleScanBeamPos;
+    if (beamY > horizonY && beamY < H) {
+      ctx.save();
+      ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(200,170,255,0.04)';
+      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
+      ctx.lineWidth = 4;  ctx.strokeStyle = 'rgba(215,185,255,0.09)';
+      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
+      ctx.lineWidth = 1;  ctx.strokeStyle = 'rgba(235,215,255,0.22)';
+      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   const vignette = ctx.createRadialGradient(cx, cy * 0.88, Math.min(W, H) * 0.16, cx, cy, Math.max(W, H) * 0.8);
   vignette.addColorStop(0, 'rgba(99,60,180,0.04)');
   vignette.addColorStop(0.45, 'rgba(16,8,28,0.12)');
@@ -728,7 +743,46 @@ function drawTitleScreen() {
     ctx.shadowColor = 'transparent';
   };
 
+  // Chromatic split intro — R/B ghosts converge into the main text
+  if (titleIntroLive && titleIntroT < 1) {
+    const progress   = Math.max(0, (titleIntroT - 0.5) / 0.5);
+    const eased      = 1 - Math.pow(progress, 2.5);
+    const chromOff   = eased * 18 * layoutScale;
+    const ghostAlpha = Math.max(0, 1 - titleIntroT * 1.8) * 0.52;
+    if (chromOff > 0.3 && ghostAlpha > 0.01) {
+      ctx.save();
+      ctx.font = `${headingFontSize}px ${TITLE_WORDMARK_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = ghostAlpha;
+      ctx.fillStyle = '#ff3377';
+      ctx.shadowColor = '#ff0055';
+      ctx.shadowBlur = 22;
+      ctx.fillText('Techno Drone', cx - chromOff, headingY);
+      ctx.fillStyle = '#3366ff';
+      ctx.shadowColor = '#0033ff';
+      ctx.fillText('Techno Drone', cx + chromOff, headingY);
+      ctx.restore();
+    }
+  }
+
   drawNeonWord('Techno Drone', headingY, headingFontSize, ['#5b21b6', '#6d28d9', '#8b5cf6', '#c4b5fd']);
+
+  // Snap bloom burst on convergence
+  if (titleSnapDecay > 0) {
+    ctx.save();
+    ctx.font = `${headingFontSize}px ${TITLE_WORDMARK_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#c4b5fd';
+    ctx.shadowBlur = 36 * titleSnapDecay;
+    ctx.globalAlpha = titleSnapDecay * 0.7;
+    ctx.fillText('Techno Drone', cx, headingY);
+    ctx.restore();
+  }
+
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'transparent';
 
@@ -1270,7 +1324,7 @@ function drawHUD() {
   cy += Math.round(10 * uiScale);
   cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor, livesValueColor);
   cy += Math.round(2 * uiScale);
-  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASE DROP', player.ultReady, nukeLabelColor, nukeValueColor);
+  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASS DROP', player.ultReady, nukeLabelColor, nukeValueColor);
   cy += Math.round(10 * uiScale);
   cy = drawStageReadout(tx, cy, Math.min(barW, 240));
 
@@ -1385,6 +1439,17 @@ function startTutorialFromDevMenu() {
 function updateTitle(delta) {
   waveField.update(delta);
   titleGridOff += delta * 0.022;
+  titleScanBeamPos = (titleScanBeamPos + delta * 0.0002) % 1;
+  if (titleIntroLive && titleIntroT < 1) {
+    titleIntroT = Math.min(1, titleIntroT + delta * 0.0008);
+    if (!titleSnapFired && titleIntroT >= 0.92) {
+      titleSnapFired = true;
+      titleSnapDecay = 1.0;
+    }
+  }
+  if (titleSnapDecay > 0) {
+    titleSnapDecay = Math.max(0, titleSnapDecay - delta * 0.010);
+  }
   const titleOptionCount = 3;
   const keyboardNavigated =
     justPressed['ArrowUp'] || justPressed['ArrowDown'] ||
@@ -1589,6 +1654,7 @@ function handleDevMenuClick(e) {
   if (e.offsetX >= backX && e.offsetX <= backX + backW &&
       e.offsetY >= backY && e.offsetY <= backY + backH) {
     gameState = 'title';
+    titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
     audio.play('menuSelect');
   }
 }

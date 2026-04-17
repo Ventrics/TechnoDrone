@@ -173,6 +173,8 @@ const bullets = {
     this.pool.push({
       x,
       y,
+      prevX: x,
+      prevY: y,
       angle,
       len: opts.len || 22,
       damage: opts.damage || player.effectiveDamage,
@@ -222,6 +224,8 @@ const bullets = {
     this.pool = this.pool.filter(b => {
       const speed = baseSpeed * (b.speedMul || 1);
       const a = b.angle || 0;
+      b.prevX = b.x;
+      b.prevY = b.y;
       b.x += Math.cos(a) * speed * dt;
       b.y += Math.sin(a) * speed * dt;
       // Cull bullets that exit the top of the play area or sides
@@ -815,7 +819,7 @@ const screenNuke = {
       { r: -30, color: '#ff1a5e', width: 18,  speed: 1.0,  alphaMult: 0.95, bloom: 34 },
       { r: -65, color: '#8a0030', width: 10,  speed: 0.97, alphaMult: 0.60, bloom: 22 },
     ];
-    streakCallout.show('BASE DROP', '#ff5aa5', 1500, 2.65, 'center');
+    streakCallout.show('BASS DROP', '#ff5aa5', 1500, 2.65, 'center');
     stage.shakeTimer     = 800;
     stage.shakeIntensity = 14;
     stage.slowmoTimer    = gameState === 'tutorial' ? 0 : 600;
@@ -834,6 +838,7 @@ const screenNuke = {
 
     for (let i = shards.pool.length - 1; i >= 0; i--) {
       const s  = shards.pool[i];
+      if (s.isBonusRing) continue;
       const dx = s.x - drone.x, dy = s.y - drone.y;
       const d  = Math.sqrt(dx * dx + dy * dy);
       if (d <= this.ring && !s._nuked) {

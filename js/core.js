@@ -140,6 +140,13 @@ function writeSave() {
   persistSave(save);
 }
 
+function recordRunResult(score, kills) {
+  if (score > save.highScore) save.highScore = score;
+  save.runs.push({ score, kills });
+  if (save.runs.length > 10) save.runs.shift();
+  writeSave();
+}
+
 const save = loadSave();
 let furthestStage = loadFurthestStage();
 
@@ -147,6 +154,11 @@ let gameState               = 'title';
 let titleGridOff            = 0;
 let titleSelection          = 0;
 let titleSelectionChangedAt = 0;
+let titleIntroT             = 0;     // 0–1 progress through chromatic split intro
+let titleIntroLive          = true;  // true on first load so intro plays immediately
+let titleSnapFired          = false; // one-shot bloom burst flag
+let titleSnapDecay          = 0;     // bloom burst decay (1→0)
+let titleScanBeamPos        = 0;     // 0–1 normalized scan beam position
 let endScreenSelection      = 0;
 let endScreenSelectionChangedAt = 0;
 

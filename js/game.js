@@ -191,6 +191,7 @@ function beginMissionCompleteSequence() {
 
 function startMissionCompleteScreen() {
   startScreenTransition('pixelate', () => {
+    recordRunResult(player.score, stage.totalKills);
     bullets.pool = [];
     bullets.cooldown = 0;
     enemyBullets.reset();
@@ -803,6 +804,7 @@ function _goToTitleFromEndScreen() {
   startScreenTransition('pixelate', () => {
     _resetAllState();
     gameState = 'title';
+    titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
     endScreenSelection = 0;
     endScreenSelectionChangedAt = getNow();
     delete justPressed['Enter'];
@@ -869,6 +871,7 @@ function _activatePauseItem(index, clickX = null) {
       pauseSel = 0;
       if (typeof pixiPost !== 'undefined') pixiPost.setPaused(false);
       gameState = 'title';
+      titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
       audio.playMusic('title');
       delete justPressed['Enter'];
     });
@@ -880,6 +883,7 @@ function _returnFromLeaderboard() {
     audio.play('menuConfirm');
     audio.playMusic('title');
     gameState = 'title';
+    titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
   });
 }
 
@@ -918,6 +922,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     startScreenTransition('fade', () => {
       gameState = 'title';
+      titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
       audio.play('menuSelect');
       audio.playMusic('title');
     });
