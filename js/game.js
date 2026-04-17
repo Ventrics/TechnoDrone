@@ -191,7 +191,10 @@ function beginMissionCompleteSequence() {
 
 function startMissionCompleteScreen() {
   startScreenTransition('pixelate', () => {
-    recordRunResult(player.score, stage.totalKills);
+    const finalScore = player.score;
+    const finalKills = stage.totalKills;
+    recordRunResult(finalScore, finalKills);
+    submitLeaderboardRun(finalScore, finalKills);
     bullets.pool = [];
     bullets.cooldown = 0;
     enemyBullets.reset();
@@ -331,6 +334,7 @@ function update(delta) {
 
   if (gameState === 'title') { updateTitle(delta); return; }
   if (gameState === 'leaderboard') { leaderboard.update(delta); return; }
+  if (gameState === 'nameEntry') { nameEntry.update(delta); return; }
   if (gameState === 'win') {
     starField.update(delta);
     const winMove = ((keys['ArrowLeft'] || keys['a'] || keys['A']) ? -1 : 0) +
@@ -343,7 +347,6 @@ function update(delta) {
   if (paused) { return; }
 
   if (player.dead) {
-    if (gameState === 'nameEntry') nameEntry.update(delta);
     return;
   }
 
@@ -429,6 +432,12 @@ function render() {
     leaderboard.draw();
     return;
   }
+  if (gameState === 'nameEntry') {
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+    nameEntry.drawOverlay();
+    return;
+  }
   if (gameState === 'win') {
     pixiPost.setNearDeath(false);
     pixiPost.setFlowState(false);
@@ -445,10 +454,6 @@ function render() {
   if (player.dead && !player.deathPresentationPending) {
     pixiPost.setNearDeath(false);
     pixiPost.setFlowState(false);
-    if (gameState === 'nameEntry') {
-      nameEntry.drawOverlay();
-      return;
-    }
     drawDeathScreen();
     return;
   }
@@ -894,12 +899,15 @@ function _confirmNameEntry() {
     return;
   }
   writePlayerName(nameEntry.name);
+  const submission = getQueuedLeaderboardRun();
   leaderboard.submitMessage = 'SUBMITTING SCORE...';
   leaderboard.submitOk = true;
   startScreenTransition('fade', () => {
     gameState = 'leaderboard';
     audio.play('menuConfirm');
-    leaderboard.submitScore(player.score, stage.totalKills);
+    leaderboard.submitScore(submission.score, submission.kills).then(ok => {
+      if (ok) clearLeaderboardSubmission(submission);
+    });
     leaderboard.fetchScores();
   });
 }

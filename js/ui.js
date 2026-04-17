@@ -188,14 +188,15 @@ const leaderboard = {
   },
 
   async submitScore(score, kills) {
-    if (score <= 0) return;
+    if (score <= 0) return false;
     const name = loadPlayerName();
     if (!name) {
       this.submitOk = false;
       this.submitMessage = 'NO CALLSIGN - SCORE NOT SUBMITTED';
-      return;
+      return false;
     }
     try {
+      let remoteAlreadyBetter = false;
       const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?player_name=eq.${encodeURIComponent(name)}&select=id,score`, {
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
       });
@@ -204,7 +205,7 @@ const leaderboard = {
         this.submitOk = false;
         this.submitMessage = `CHECK FAILED ${checkRes.status}`;
         console.error('Leaderboard check failed:', checkRes.status, text);
-        return;
+        return false;
       }
       const records = await checkRes.json();
 
@@ -228,8 +229,10 @@ const leaderboard = {
             this.submitOk = false;
             this.submitMessage = `UPDATE FAILED ${patchRes.status}`;
             console.error('Leaderboard update failed:', patchRes.status, text);
-            return;
+            return false;
           }
+        } else {
+          remoteAlreadyBetter = true;
         }
 
         if (otherIds.length > 0) {
@@ -254,30 +257,34 @@ const leaderboard = {
           this.submitOk = false;
           this.submitMessage = `INSERT FAILED ${postRes.status}`;
           console.error('Leaderboard insert failed:', postRes.status, text);
-          return;
+          return false;
         }
       }
 
-      const existingIndex = this.scores.findIndex(entry => entry.player_name === name);
-      if (existingIndex >= 0) {
-        if (score >= this.scores[existingIndex].score) {
-          this.scores[existingIndex] = Object.assign({}, this.scores[existingIndex], { score, kills });
+      if (!remoteAlreadyBetter) {
+        const existingIndex = this.scores.findIndex(entry => entry.player_name === name);
+        if (existingIndex >= 0) {
+          if (score >= this.scores[existingIndex].score) {
+            this.scores[existingIndex] = Object.assign({}, this.scores[existingIndex], { score, kills });
+          }
+        } else {
+          this.scores.push({ player_name: name, score, kills });
         }
-      } else {
-        this.scores.push({ player_name: name, score, kills });
+        this.scores.sort((a, b) => b.score - a.score);
+        this.scores = this.scores.slice(0, 20);
       }
-      this.scores.sort((a, b) => b.score - a.score);
-      this.scores = this.scores.slice(0, 20);
       this.loadTime = getNow();
       this.submitOk = true;
-      this.submitMessage = 'SCORE SUBMITTED';
+      this.submitMessage = remoteAlreadyBetter ? 'BEST ALREADY ON LEADERBOARD' : 'SCORE SUBMITTED';
 
       await this.fetchScores();
+      return true;
     } catch (e) {
       this.error = true;
       this.submitOk = false;
       this.submitMessage = 'SUBMIT ERROR';
       console.error('Leaderboard submit exception:', e);
+      return false;
     }
   },
 
@@ -473,6 +480,88 @@ const leaderboard = {
   }
 };
 
+let pendingLeaderboardSubmission = null;
+
+function normalizeLeaderboardRun(score, kills) {
+  return {
+    score: Math.max(0, Math.floor(Number(score) || 0)),
+    kills: Math.max(0, Math.floor(Number(kills) || 0)),
+  };
+}
+
+function betterLeaderboardRun(current, candidate) {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  return candidate.score >= current.score ? candidate : current;
+}
+
+function getBestSavedLeaderboardRun() {
+  const savedBest = normalizeLeaderboardRun(save.highScore, 0);
+  const runs = Array.isArray(save.runs) ? save.runs : [];
+  return runs.reduce((best, run) => {
+    const candidate = normalizeLeaderboardRun(run.score, run.kills);
+    return betterLeaderboardRun(best, candidate);
+  }, savedBest);
+}
+
+function queueLeaderboardSubmission(score, kills) {
+  const snapshot = normalizeLeaderboardRun(score, kills);
+  if (snapshot.score <= 0) return null;
+  pendingLeaderboardSubmission = betterLeaderboardRun(pendingLeaderboardSubmission, snapshot);
+  return pendingLeaderboardSubmission;
+}
+
+function clearLeaderboardSubmission(snapshot) {
+  if (!pendingLeaderboardSubmission || !snapshot) return;
+  if (snapshot.score >= pendingLeaderboardSubmission.score) {
+    pendingLeaderboardSubmission = null;
+  }
+}
+
+function submitLeaderboardRun(score, kills) {
+  const snapshot = queueLeaderboardSubmission(score, kills);
+  if (!snapshot) return false;
+  if (!loadPlayerName()) {
+    nameEntry.name = '';
+    return false;
+  }
+  leaderboard.submitScore(snapshot.score, snapshot.kills).then(ok => {
+    if (ok) clearLeaderboardSubmission(snapshot);
+  });
+  return true;
+}
+
+function getQueuedLeaderboardRun() {
+  let best = pendingLeaderboardSubmission || normalizeLeaderboardRun(0, 0);
+  if (typeof player !== 'undefined' && typeof stage !== 'undefined') {
+    const activeRun = normalizeLeaderboardRun(player.score, stage.totalKills);
+    best = betterLeaderboardRun(best, activeRun);
+  }
+  best = betterLeaderboardRun(best, getBestSavedLeaderboardRun());
+  return best;
+}
+
+function openLeaderboardWithBestSync() {
+  const snapshot = getQueuedLeaderboardRun();
+  if (snapshot.score > 0 && !loadPlayerName()) {
+    queueLeaderboardSubmission(snapshot.score, snapshot.kills);
+    nameEntry.name = '';
+    gameState = 'nameEntry';
+    return;
+  }
+
+  gameState = 'leaderboard';
+  if (snapshot.score > 0) {
+    leaderboard.submitOk = true;
+    leaderboard.submitMessage = 'SYNCING BEST SCORE...';
+    const submitted = submitLeaderboardRun(snapshot.score, snapshot.kills);
+    if (!submitted) leaderboard.fetchScores();
+    return;
+  }
+
+  leaderboard.fetchScores();
+}
+
 const BAD_WORDS = [
   'fuck','shit','ass','bitch','cunt','dick','cock','pussy','fag','faggot',
   'nigger','nigga','nig','spic','chink','kike','gook','wetback','cracker',
@@ -490,6 +579,12 @@ const nameEntry = {
   rejectTimer: 0,
   update(delta) {
     if (this.rejectTimer > 0) this.rejectTimer -= delta;
+    if (justPressed['Escape'] && pendingLeaderboardSubmission && !player.dead) {
+      pendingLeaderboardSubmission = null;
+      gameState = 'leaderboard';
+      leaderboard.fetchScores();
+      return;
+    }
     if (justPressed['Enter']) {
       _confirmNameEntry();
     } else if (justPressed['Backspace']) {
@@ -536,6 +631,12 @@ const nameEntry = {
       ctx.font = `bold 12px ${UI_DISPLAY_FONT}`;
       ctx.fillStyle = '#6fa8ff';
       ctx.fillText('[ BACKSPACE ]', cx, cy + 116);
+    }
+
+    if (pendingLeaderboardSubmission && !player.dead) {
+      ctx.font = `bold 12px ${UI_DISPLAY_FONT}`;
+      ctx.fillStyle = '#6fa8ff';
+      ctx.fillText('[ ESC TO SKIP ]', cx, cy + (this.name.length > 0 ? 148 : 116));
     }
     ctx.restore();
   }
@@ -1414,8 +1515,7 @@ function startTutorialRun() {
 
 function openLeaderboardFromTitle() {
   startScreenTransition('fade', () => {
-    gameState = 'leaderboard';
-    leaderboard.fetchScores();
+    openLeaderboardWithBestSync();
   });
 }
 
