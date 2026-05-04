@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TechnoDrone — Enemy Reference Sheet</title>
+<style>
+  :root {
+    --bg: #050505;
+    --panel: #0c0c10;
+    --panel-edge: #1c1c24;
+    --ink: #e6e8ef;
+    --ink-dim: #8a8e99;
+    --accent: #7be3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 32px 40px 16px;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .stage-tabs {
+    display: flex;
+    gap: 6px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .stage-tab {
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 120ms, color 120ms;
+  }
+  .stage-tab:hover { border-color: #3a3a48; color: var(--ink); }
+  .stage-tab.active { border-color: var(--accent); color: var(--ink); background: #0f1318; }
+  .stage-tab .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    box-shadow: 0 0 6px currentColor;
+    display: inline-block;
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  header p {
+    margin: 0;
+    color: var(--ink-dim);
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 720px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+    gap: 16px;
+    padding: 24px 40px 64px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .card-name { font-size: 14px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink); }
+  .card-size { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+  .card-meta {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 4px 12px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+  }
+  .card-meta dt { color: #5a5e6a; }
+  .card-meta dd { margin: 0; color: var(--ink); }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pane { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .pane-label { font-size: 10px; color: var(--ink-dim); letter-spacing: 0.08em; text-transform: uppercase; }
+  canvas {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    display: block;
+  }
+  canvas.silhouette { background: #000; }
+  footer {
+    padding: 16px 40px 48px;
+    color: var(--ink-dim);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  footer code { color: var(--accent); background: #111; padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TECHNODRONE — ENEMY REFERENCE</h1>
+  <p>Live in-game render on the left of each card, pure silhouette on the right. Use the silhouettes as the redesign target — that's the polygon shape we trace. Sizes are true game pixels (canvases scale up for visibility). Stage tabs below recolor regular enemies (shards, drift) — fixed-color enemies (kamikaze, shield drone, turret, jackpot, bonus ring, gates, elite) are unaffected.</p>
+  <div class="stage-tabs" id="stageTabs"></div>
+</header>
+<main id="grid"></main>
+<footer>
+  Source of truth for shape geometry: <code>js/enemies.js</code> (helpers <code>makeRegularPolygon</code>, <code>makeArrowheadShape</code>, <code>makeJackpotShape</code>, <code>makeBasicShardVisuals</code>) and <code>js/enemy-turrets.js</code>. Render code is mirrored from the same file's <code>shards.draw()</code> block so the in-game look is preserved.
+</footer>
+
+<script>
+// ─── Shape construction helpers (mirrored from js/enemies.js) ────────────────
+function makeRegularPolygon(size, sides, rotation = -Math.PI / 2) {
+  const pts = [];
+  for (let i = 0; i < sides; i++) {
+    const angle = rotation + (i / sides) * Math.PI * 2;
+    pts.push({ x: Math.cos(angle) * size, y: Math.sin(angle) * size });
+  }
+  return pts;
+}
+function makeArrowheadShape(size) {
+  return [
+    { x: size * 1.7, y: 0 },
+    { x: size * 0.3, y: size * 0.9 },
+    { x: -size * 0.85, y: size * 0.45 },
+    { x: -size * 0.45, y: 0 },
+    { x: -size * 0.85, y: -size * 0.45 },
+    { x: size * 0.3, y: -size * 0.9 },
+  ];
+}
+function makeJackpotShape(size) {
+  return makeRegularPolygon(size * 1.42, 16, Math.PI / 16);
+}
+function makeBasicShardVisuals(size) {
+  // Use deterministic values (no randomness) so the reference is stable.
+  const noseSkew = 0;
+  const shoulderY = size * 0.18;
+  const tailLift = 0;
+  return {
+    pts: [
+      { x: noseSkew,     y: -size * 1.08 },
+      { x: size * 0.72,  y: -shoulderY },
+      { x: size * 0.30,  y: size * 0.84 },
+      { x: -size * 0.20, y: size * 0.62 },
+      { x: -size * 0.84, y: size * (0.04 + tailLift / size) },
+      { x: -size * 0.46, y: -size * 0.70 },
+    ],
+    platePts: [
+      { x: noseSkew * 0.45, y: -size * 0.66 },
+      { x: size * 0.40,     y: -size * 0.16 },
+      { x: size * 0.18,     y: size * 0.46 },
+      { x: -size * 0.10,    y: size * 0.30 },
+      { x: -size * 0.48,    y: -size * 0.02 },
+      { x: -size * 0.26,    y: -size * 0.54 },
+    ],
+    accentPts: [
+      { x: noseSkew + size * 0.02, y: -size * 0.92 },
+      { x: size * 0.54,            y: -size * 0.20 },
+      { x: size * 0.28,            y: size * 0.02 },
+      { x: size * 0.02,            y: -size * 0.44 },
+    ],
+    coreLine: {
+      from: { x: noseSkew * 0.3 + size * 0.04, y: -size * 0.50 },
+      to:   { x: size * 0.16,                  y: size * 0.08 },
+    },
+    rearLine: {
+      from: { x: -size * 0.50, y: -size * 0.04 },
+      to:   { x: -size * 0.02, y: size * 0.18 },
+    },
+  };
+}
+
+// ─── ctx helpers (local versions of game globals) ────────────────────────────
+function tracePolygonPath(ctx, points, scale = 1) {
+  ctx.beginPath();
+  ctx.moveTo(points[0].x * scale, points[0].y * scale);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x * scale, points[i].y * scale);
+  ctx.closePath();
+}
+function setGlow(ctx, color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
+function clearGlow(ctx) { ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; }
+
+const T0 = performance.now();
+function now() { return performance.now() - T0; }
+
+// ─── Full-render draw functions (mirrored from shards.draw) ──────────────────
+// Each takes (ctx, enemy state, scale). Caller has already set up canvas,
+// translated to center, and applied `scale`. Time-driven animation reads now().
+
+function drawNestedTriangle(ctx, s) {
+  const baseColor = s.color;
+  const pulse = 0.85 + 0.15 * Math.sin(now() * 0.005);
+  const outerPts = s.pts;
+  const innerPts = outerPts.map(p => ({ x: p.x * 0.5, y: p.y * 0.5 }));
+  ctx.lineJoin = 'miter';
+  ctx.miterLimit = 10;
+
+  // Outer halo bloom
+  tracePolygonPath(ctx, outerPts, 1.35);
+  ctx.fillStyle = baseColor;
+  ctx.globalAlpha = 0.08 * pulse;
+  setGlow(ctx, baseColor, 32);
+  ctx.fill();
+
+  // Dark interior so the inner triangle reads against the body
+  tracePolygonPath(ctx, outerPts);
+  ctx.fillStyle = '#000';
+  ctx.globalAlpha = 0.55;
+  clearGlow(ctx);
+  ctx.fill();
+
+  // Outer triangle — wide corona stroke
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.40 * pulse;
+  setGlow(ctx, baseColor, 22);
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 4.2;
+  ctx.stroke();
+
+  // Outer triangle — mid stroke
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.92;
+  setGlow(ctx, baseColor, 10);
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  // Outer triangle — crisp white core line
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 1;
+  clearGlow(ctx);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+
+  // Inner triangle — wide corona
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.55 * pulse;
+  setGlow(ctx, baseColor, 16);
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+
+  // Inner triangle — mid stroke
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.96;
+  setGlow(ctx, baseColor, 6);
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+
+  // Inner triangle — crisp white core line
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 1;
+  clearGlow(ctx);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+}
+
+function drawBasicShard(ctx, s) {
+  const pulse = 0.72 + 0.28 * Math.sin(now() * 0.009 + s.x * 0.012);
+  const baseColor = s.color;
+  ctx.rotate(s.angle);
+
+  tracePolygonPath(ctx, s.pts, 1.32);
+  ctx.fillStyle = baseColor;
+  ctx.globalAlpha = 0.05 + pulse * 0.03;
+  ctx.fill();
+
+  tracePolygonPath(ctx, s.pts);
+  ctx.fillStyle = '#000840';
+  ctx.globalAlpha = 0.20;
+  ctx.fill();
+
+  ctx.lineJoin = 'miter';
+  ctx.miterLimit = 6;
+
+  tracePolygonPath(ctx, s.pts);
+  ctx.globalAlpha = 0.34;
+  setGlow(ctx, baseColor, 16);
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+
+  tracePolygonPath(ctx, s.pts);
+  ctx.globalAlpha = 0.78;
+  setGlow(ctx, baseColor, 8);
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  tracePolygonPath(ctx, s.pts);
+  ctx.globalAlpha = 1.0;
+  clearGlow(ctx);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.55;
+  setGlow(ctx, baseColor, 6);
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 0.8;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(s.coreLine.from.x, s.coreLine.from.y);
+  ctx.lineTo(s.coreLine.to.x, s.coreLine.to.y);
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.78 + pulse * 0.2;
+  setGlow(ctx, baseColor, 8);
+  ctx.fillStyle = baseColor;
+  ctx.beginPath();
+  ctx.arc(s.coreLine.from.x, s.coreLine.from.y, Math.max(1.4, s.size * 0.07), 0, Math.PI * 2);
+  ctx.fill();
+
+  clearGlow(ctx);
+  ctx.globalAlpha = 1;
+}
+
+function drawPolygonShard(ctx, s, isKamikaze = false, isElite = false) {
+  ctx.rotate(s.angle);
+  const drawColor = s.color;
+  const flicker = isKamikaze ? 0.75 + 0.25 * Math.sin(now() * 0.025 + s.x * 0.01) : 1;
+
+  if (isKamikaze) {
+    tracePolygonPath(ctx, s.pts, 1.35);
+    ctx.fillStyle = '#ff2200';
+    ctx.globalAlpha = 0.06;
+    ctx.fill();
+  }
+  tracePolygonPath(ctx, s.pts, 1.28);
+  ctx.fillStyle = drawColor;
+  ctx.globalAlpha = 0.05;
+  ctx.fill();
+
+  tracePolygonPath(ctx, s.pts);
+  ctx.fillStyle = drawColor;
+  ctx.globalAlpha = (isKamikaze ? 0.10 : 0.08) * flicker;
+  ctx.fill();
+
+  ctx.globalAlpha = (isKamikaze ? 0.62 : 0.50) * flicker;
+  setGlow(ctx, drawColor, isKamikaze ? 18 : (isElite ? 28 : 18));
+  ctx.strokeStyle = drawColor;
+  ctx.lineWidth = isKamikaze ? 2.8 : (isElite ? 3.5 : 2.5);
+  ctx.stroke();
+
+  // Sheen sweep
+  ctx.save();
+  tracePolygonPath(ctx, s.pts);
+  ctx.clip();
+  const sheen = ctx.createLinearGradient(-s.size * 1.4, -s.size * 1.6, s.size * 1.1, s.size * 0.9);
+  sheen.addColorStop(0, 'rgba(255,255,255,0.32)');
+  sheen.addColorStop(0.45, 'rgba(255,255,255,0.12)');
+  sheen.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = isElite ? 0.36 : 0.24;
+  ctx.fillStyle = sheen;
+  ctx.fillRect(-s.size * 2, -s.size * 2, s.size * 4, s.size * 4);
+  ctx.restore();
+
+  ctx.globalAlpha = (isElite ? 0.55 : 0.38) * flicker;
+  setGlow(ctx, '#ffffff', isKamikaze ? 6 : (isElite ? 8 : 5));
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = isElite ? 1.2 : 0.9;
+  tracePolygonPath(ctx, s.pts);
+  ctx.stroke();
+
+  // Inner crack hairline
+  setGlow(ctx, drawColor, isKamikaze ? 12 : 10);
+  ctx.strokeStyle = drawColor;
+  ctx.lineWidth = 0.5;
+  ctx.globalAlpha = (isKamikaze ? 0.72 : 0.6) * flicker;
+  ctx.beginPath();
+  ctx.moveTo(s.pts[0].x * 0.6, s.pts[0].y * 0.6);
+  ctx.lineTo(s.pts[Math.floor(s.pts.length / 2)].x * 0.6, s.pts[Math.floor(s.pts.length / 2)].y * 0.6);
+  ctx.stroke();
+
+  if (isElite) {
+    // Glowing red shield ring (matches in-game elite shield mechanic)
+    const shieldPulse = 0.65 + 0.35 * Math.sin(now() * 0.01);
+    const shieldRadius = s.size * 1.35;
+    ctx.globalAlpha = 0.45 + shieldPulse * 0.3;
+    setGlow(ctx, '#ff1133', 28);
+    ctx.strokeStyle = '#ff1133';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  clearGlow(ctx);
+  ctx.globalAlpha = 1;
+}
+
+function drawShieldDrone(ctx, s) {
+  // Nested diamond — outer + inner with full glow stack (matches js/enemies.js)
+  const baseColor = s.color;
+  const pulse = 0.85 + 0.15 * Math.sin(now() * 0.005);
+  const r = s.size * 1.8;
+  const outerPts = makeRegularPolygon(r, 4);
+  const innerPts = makeRegularPolygon(r * 0.5, 4);
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 10;
+
+  tracePolygonPath(ctx, outerPts, 1.35);
+  ctx.fillStyle = baseColor; ctx.globalAlpha = 0.10 * pulse;
+  setGlow(ctx, baseColor, 32); ctx.fill();
+  tracePolygonPath(ctx, outerPts);
+  ctx.fillStyle = '#000'; ctx.globalAlpha = 0.6; clearGlow(ctx); ctx.fill();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.45 * pulse;
+  setGlow(ctx, baseColor, 22); ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 4.2; ctx.stroke();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.92; setGlow(ctx, baseColor, 10);
+  ctx.lineWidth = 2.0; ctx.stroke();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 1; clearGlow(ctx);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.9; ctx.stroke();
+
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.55 * pulse;
+  setGlow(ctx, baseColor, 16); ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 2.6; ctx.stroke();
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.96; setGlow(ctx, baseColor, 6);
+  ctx.lineWidth = 1.3; ctx.stroke();
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 1; clearGlow(ctx);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.7; ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawTurret(ctx, s) {
+  // Nested hexagon — outer + inner + center white square (matches js/enemies.js)
+  const baseColor = s.color;
+  const pulse = 0.85 + 0.15 * Math.sin(now() * 0.005);
+  const r = s.size * 1.9;
+  const outerPts = makeRegularPolygon(r, 6);
+  const innerPts = makeRegularPolygon(r * 0.5, 6);
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 10;
+
+  tracePolygonPath(ctx, outerPts, 1.35);
+  ctx.fillStyle = baseColor; ctx.globalAlpha = 0.10 * pulse;
+  setGlow(ctx, baseColor, 32); ctx.fill();
+  tracePolygonPath(ctx, outerPts);
+  ctx.fillStyle = '#000'; ctx.globalAlpha = 0.65; clearGlow(ctx); ctx.fill();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.45 * pulse;
+  setGlow(ctx, baseColor, 22); ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 4.2; ctx.stroke();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 0.92; setGlow(ctx, baseColor, 10);
+  ctx.lineWidth = 2.0; ctx.stroke();
+  tracePolygonPath(ctx, outerPts);
+  ctx.globalAlpha = 1; clearGlow(ctx);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.9; ctx.stroke();
+
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.55 * pulse;
+  setGlow(ctx, baseColor, 16); ctx.strokeStyle = baseColor;
+  ctx.lineWidth = 2.6; ctx.stroke();
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 0.96; setGlow(ctx, baseColor, 6);
+  ctx.lineWidth = 1.3; ctx.stroke();
+  tracePolygonPath(ctx, innerPts);
+  ctx.globalAlpha = 1; clearGlow(ctx);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.7; ctx.stroke();
+
+  ctx.globalAlpha = 1; setGlow(ctx, '#fff', 6);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-1.5, -1.5, 3, 3);
+  clearGlow(ctx);
+}
+
+function drawJackpot(ctx, s) {
+  const r = s.size;
+  const t = now();
+  const pulse = 0.5 + 0.5 * Math.sin(t * 0.008);
+  const amber = '#ffff00';
+  const amberBrt = '#ffff88';
+  const chipR = r * 1.42;
+  const faceR = r * 1.02;
+  const coreR = r * 0.58;
+  ctx.rotate(s.angle);
+
+  ctx.globalAlpha = 0.14 + pulse * 0.07;
+  setGlow(ctx, amber, 22);
+  ctx.fillStyle = amber;
+  ctx.beginPath(); ctx.arc(0, 0, chipR * 1.08, 0, Math.PI * 2); ctx.fill();
+
+  ctx.globalAlpha = 0.94;
+  setGlow(ctx, amber, 18);
+  ctx.fillStyle = '#d79820';
+  ctx.beginPath(); ctx.arc(0, 0, chipR, 0, Math.PI * 2); ctx.fill();
+
+  ctx.globalAlpha = 0.95;
+  setGlow(ctx, amberBrt, 14);
+  ctx.strokeStyle = amberBrt;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.arc(0, 0, chipR, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 0.82;
+  ctx.strokeStyle = '#fff0b8';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(0, 0, chipR * 0.84, 0, Math.PI * 2); ctx.stroke();
+
+  const wispCount = 8;
+  for (let i = 0; i < wispCount; i++) {
+    const a = s.angle * 0.4 + i * (Math.PI * 2 / wispCount);
+    const wispPulse = 0.5 + 0.5 * Math.sin(t * 0.004 + i * 1.7);
+    const wispR = chipR * (1.55 + wispPulse * 0.18);
+    const wx = Math.cos(a) * wispR;
+    const wy = Math.sin(a) * wispR;
+    const wispSize = chipR * (0.08 + wispPulse * 0.04);
+    ctx.globalAlpha = 0.18 + wispPulse * 0.22;
+    setGlow(ctx, '#ffd15c', 12);
+    ctx.fillStyle = '#ffd15c';
+    ctx.beginPath(); ctx.arc(wx, wy, wispSize, 0, Math.PI * 2); ctx.fill();
+  }
+  clearGlow(ctx);
+
+  ctx.globalAlpha = 0.96;
+  setGlow(ctx, '#ffd66b', 10);
+  ctx.fillStyle = '#f5c55e';
+  ctx.beginPath(); ctx.arc(0, 0, faceR, 0, Math.PI * 2); ctx.fill();
+
+  ctx.globalAlpha = 0.96;
+  ctx.strokeStyle = '#fff1bf';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(0, 0, faceR, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#fff6dc';
+  ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.arc(0, 0, coreR * 1.18, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  setGlow(ctx, '#ffffff', 12);
+  ctx.fillStyle = '#fff9ef';
+  ctx.beginPath(); ctx.arc(0, 0, coreR, 0, Math.PI * 2); ctx.fill();
+
+  clearGlow(ctx);
+}
+
+function drawBonusRing(ctx, s) {
+  const t = now();
+  const pulse = 0.72 + 0.28 * (Math.sin(t * 0.01 + s.pulseOffset) * 0.5 + 0.5);
+  const outerR = s.size * (1.05 + pulse * 0.18);
+  const innerR = s.innerRadius;
+  const orbitR = outerR + 8;
+  ctx.rotate(s.angle);
+
+  ctx.globalAlpha = 0.16 + pulse * 0.12;
+  setGlow(ctx, s.color, 22);
+  ctx.fillStyle = s.color;
+  ctx.beginPath(); ctx.arc(0, 0, outerR + 8, 0, Math.PI * 2); ctx.fill();
+
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = s.glowColor;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, outerR, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 0.82;
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, innerR, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.globalAlpha = 0.8;
+  ctx.strokeStyle = '#f3fff0';
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < 4; i++) {
+    const a = s.ringAngle + i * (Math.PI * 0.5);
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * orbitR, Math.sin(a) * orbitR, 2.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 0.2;
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-outerR - 16, 0);
+  ctx.lineTo(outerR + 16, 0);
+  ctx.stroke();
+  clearGlow(ctx);
+}
+
+function drawGate(ctx, s) {
+  const isSafe = !!s.isGateSafe;
+  const w = s.gateWidth;
+  const h = s.gateHeight;
+  const t = now() * 0.018 + s.x * 0.01;
+  const gateColor = s.color;
+  const edgeColor = isSafe ? '#ccffd8' : '#ffd6df';
+  const accentColor = isSafe ? '#39ff14' : '#ff294f';
+  const bodyColor = isSafe ? '#07180b' : '#25070f';
+  const fillAlpha = isSafe ? 0.24 : 0.18;
+
+  ctx.globalAlpha = fillAlpha;
+  setGlow(ctx, gateColor, isSafe ? 18 : 10);
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+
+  ctx.globalAlpha = isSafe ? 0.88 : 0.74;
+  ctx.strokeStyle = edgeColor;
+  ctx.lineWidth = isSafe ? 1.5 : 1.35;
+  ctx.strokeRect(-w * 0.5, -h * 0.5, w, h);
+
+  ctx.globalAlpha = isSafe ? 0.88 : 0.72;
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(-w * 0.5, -h * 0.5, w, 2);
+  ctx.fillRect(-w * 0.5, h * 0.5 - 2, w, 2);
+
+  ctx.beginPath();
+  const points = 7;
+  for (let i = 0; i <= points; i++) {
+    const px = -w * 0.5 + (w / points) * i;
+    const py = Math.sin(t + i * 0.95) * (h * (isSafe ? 0.18 : 0.12));
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.globalAlpha = isSafe ? 0.95 : 0.84;
+  setGlow(ctx, accentColor, isSafe ? 14 : 12);
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = isSafe ? 2.2 : 1.9;
+  ctx.stroke();
+
+  if (isSafe) {
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#fff7fa';
+    ctx.fillRect(-w * 0.01, -h * 0.32, w * 0.02, h * 0.64);
+  } else {
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-w * 0.5, -h * 0.5 + 4, w, h - 8);
+  }
+  clearGlow(ctx);
+}
+
+// ─── Player ship — single chevron polygon ───────────────────────────────────
+function _shipChevronShape(k) {
+  return [
+    { x:  0,      y: -16 * k }, // apex (nose, -Y)
+    { x:  17 * k, y:  10 * k }, // base-right
+    { x:  0,      y:   1 * k }, // V notch (rear concave)
+    { x: -17 * k, y:  10 * k }, // base-left
+  ];
+}
+
+function _drawChevronBody(ctx, pts, color, pulse) {
+  ctx.lineJoin = 'miter';
+  ctx.miterLimit = 12;
+
+  tracePolygonPath(ctx, pts, 1.30);
+  ctx.fillStyle = color; ctx.globalAlpha = 0.10 * pulse;
+  setGlow(ctx, color, 32); ctx.fill();
+
+  tracePolygonPath(ctx, pts);
+  ctx.fillStyle = '#000'; ctx.globalAlpha = 0.65; clearGlow(ctx); ctx.fill();
+
+  tracePolygonPath(ctx, pts);
+  ctx.globalAlpha = 0.45 * pulse;
+  setGlow(ctx, color, 22); ctx.strokeStyle = color;
+  ctx.lineWidth = 4.4; ctx.stroke();
+
+  tracePolygonPath(ctx, pts);
+  ctx.globalAlpha = 0.92; setGlow(ctx, color, 10);
+  ctx.lineWidth = 2.0; ctx.stroke();
+
+  tracePolygonPath(ctx, pts);
+  ctx.globalAlpha = 1; clearGlow(ctx);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.9; ctx.stroke();
+}
+
+function drawShip(ctx, s) {
+  const color = s.color || '#00eeff';
+  const k = (s.size || 16) / 16;
+  const pulse = 0.85 + 0.15 * Math.sin(now() * 0.005);
+  const pts = _shipChevronShape(k);
+  _drawChevronBody(ctx, pts, color, pulse);
+}
+
+function silhouetteShip(ctx, s) {
+  const k = (s.size || 16) / 16;
+  const pts = _shipChevronShape(k);
+  ctx.fillStyle = '#fff';
+  tracePolygonPath(ctx, pts); ctx.fill();
+}
+
+
+// ─── Silhouette draw — solid white, no glow ─────────────────────────────────
+function drawSilhouette(ctx, s) {
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 1;
+  clearGlow(ctx);
+
+  if (s.shape === 'polygon') {
+    tracePolygonPath(ctx, s.pts);
+    ctx.fill();
+  } else if (s.shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(0, 0, s.silhouetteR, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (s.shape === 'ring') {
+    ctx.beginPath();
+    ctx.arc(0, 0, s.silhouetteR, 0, Math.PI * 2);
+    ctx.arc(0, 0, s.silhouetteInnerR, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+  } else if (s.shape === 'rect') {
+    ctx.fillRect(-s.gateWidth * 0.5, -s.gateHeight * 0.5, s.gateWidth, s.gateHeight);
+  } else if (s.shape === 'diamond') {
+    const r = s.size * 1.6;
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// ─── Enemy registry ──────────────────────────────────────────────────────────
+// Mirrored from js/constants.js
+const STAGE_ENEMY_COLORS = [
+  '#f5f7ff', '#7be3ff', '#00e5ff', '#2e3bf0', '#003b8e',
+  '#6366f1', '#7c3aed', '#4216d2', '#dd32b3', '#f5f7ff',
+];
+const STAGE_NAMES = [
+  'cool white', 'ice cyan', 'electric cyan', 'electric blue', 'deep blue',
+  'indigo', 'electric purple', 'deep purple', 'pink', 'stark white',
+];
+let activeStage = 3; // 1-indexed
+let STAGE_COLOR = STAGE_ENEMY_COLORS[activeStage - 1];
+const ELITE_COLOR = '#ff1133';
+
+// Inverted triangle (point-down) — new "regular enemy" silhouette.
+function makeDownTriangle(size) {
+  return makeRegularPolygon(size, 3, Math.PI / 2);
+}
+const triSm    = makeDownTriangle(22);
+const triMed   = makeDownTriangle(30);
+const triLg    = makeDownTriangle(38);
+const triDrift = makeDownTriangle(26);
+
+const enemies = [
+  {
+    name: 'SHARD — SMALL', sizeLabel: '22 px (inverted triangle, nested)',
+    role: 'Standard enemy, top-spawn drift', hp: 'baseHp 2–7 (scales w/ stage)',
+    color: 'Stage color', behavior: 'Falls from top, slow horizontal drift',
+    fitRadius: 34, usesStageColor: true,
+    silhouette: { shape: 'polygon', pts: triSm },
+    drawFull: (ctx, s) => drawNestedTriangle(ctx, s),
+    state: { x: 0, size: 22, color: STAGE_COLOR, angle: 0, pts: triSm },
+  },
+  {
+    name: 'SHARD — MEDIUM', sizeLabel: '30 px',
+    role: 'Standard enemy, mid tier', hp: 'baseHp 2–7',
+    color: 'Stage color', behavior: 'Falls from top, drifts',
+    fitRadius: 46, usesStageColor: true,
+    silhouette: { shape: 'polygon', pts: triMed },
+    drawFull: (ctx, s) => drawNestedTriangle(ctx, s),
+    state: { x: 100, size: 30, color: STAGE_COLOR, angle: 0, pts: triMed },
+  },
+  {
+    name: 'SHARD — LARGE', sizeLabel: '38 px',
+    role: 'Standard enemy, big tier', hp: 'baseHp 2–7',
+    color: 'Stage color', behavior: 'Falls from top, drifts',
+    fitRadius: 58, usesStageColor: true,
+    silhouette: { shape: 'polygon', pts: triLg },
+    drawFull: (ctx, s) => drawNestedTriangle(ctx, s),
+    state: { x: 200, size: 38, color: STAGE_COLOR, angle: 0, pts: triLg },
+  },
+  {
+    name: 'SHARD — ELITE', sizeLabel: '32–51 px (1.6× base, triangle)',
+    role: 'Mini-encounter; shield-break rhythm', hp: '8 shield + 6+ core (laser does 2× to both)',
+    color: 'Red #ff1133, glowing red shield ring', behavior: 'Always drops laser orb (full refill); ring shatters on break (flash + slowmo + sfx)',
+    fitRadius: 70,
+    silhouette: { shape: 'polygon', pts: makeDownTriangle(40) },
+    drawFull: (ctx, s) => drawPolygonShard(ctx, s, false, true),
+    state: { x: 50, size: 40, color: ELITE_COLOR, angle: 0,
+             pts: makeDownTriangle(40) },
+  },
+  {
+    name: 'KAMIKAZE', sizeLabel: '28 px',
+    role: 'Charger — locks player X then dives', hp: '2 (st1) → 55 (st10)',
+    color: 'Red #ff1133, orange trail', behavior: 'Hunts horizontally, telegraphs, rushes down',
+    fitRadius: 55,
+    silhouette: { shape: 'polygon', pts: makeArrowheadShape(28) },
+    drawFull: (ctx, s) => drawPolygonShard(ctx, s, true, false),
+    state: { x: 80, size: 28, color: '#ff1133', angle: 0,
+             pts: makeArrowheadShape(28), vx: 0, vy: 0 },
+  },
+  {
+    name: 'DRIFT', sizeLabel: '26 px (inverted triangle, nested)',
+    role: 'Light scout', hp: '1 + floor(stage / 4)',
+    color: 'Stage color', behavior: 'Drifts down with horizontal motion',
+    fitRadius: 40, usesStageColor: true,
+    silhouette: { shape: 'polygon', pts: triDrift },
+    drawFull: (ctx, s) => drawNestedTriangle(ctx, s),
+    state: { x: 60, size: 26, color: STAGE_COLOR, angle: 0, pts: triDrift },
+  },
+  {
+    name: 'SHIELD DRONE', sizeLabel: '~18 px Ø (nested diamond)',
+    role: 'Shields nearby enemies w/ cyan tether', hp: '2',
+    color: 'Cyan #00eeff', behavior: 'Outer diamond + inner diamond, follows ally',
+    fitRadius: 28,
+    silhouette: { shape: 'diamond' },
+    drawFull: (ctx, s) => drawShieldDrone(ctx, s),
+    state: { x: 0, size: 10, color: '#00eeff', angle: 0 },
+  },
+  {
+    name: 'TURRET', sizeLabel: '~25 px Ø (nested hex)',
+    role: 'Stationary, locks Y row, fires bullets', hp: '7',
+    color: 'Red-orange #ff2200', behavior: 'Outer hex + inner hex + center white square',
+    fitRadius: 38,
+    silhouette: { shape: 'polygon', pts: makeRegularPolygon(13 * 1.9, 6) },
+    drawFull: (ctx, s) => drawTurret(ctx, s),
+    state: { x: 0, size: 13, color: '#ff2200', angle: 0 },
+  },
+  {
+    name: 'JACKPOT', sizeLabel: '15.8 px (chip ~45 px Ø incl. wisps)',
+    role: 'Score pickup with HP — shoot it for bonus', hp: '4 → 11 (scales w/ stage)',
+    color: 'Yellow #ffff00 / amber', behavior: 'Drifts in from edge, escapes after 12.5s',
+    fitRadius: 40,
+    silhouette: { shape: 'circle', silhouetteR: 15.8 * 1.42 },
+    drawFull: (ctx, s) => drawJackpot(ctx, s),
+    state: { x: 0, size: 15.8, color: '#ffff00', angle: 0 },
+  },
+  {
+    name: 'BONUS RING', sizeLabel: '30 px outer, 18 px inner',
+    role: 'Fly-through pickup (+200 score)', hp: '1 (just touch)',
+    color: 'Gold #f5c542', behavior: 'Drops top → bottom, lifetime 8.2s',
+    fitRadius: 55,
+    silhouette: { shape: 'ring', silhouetteR: 38, silhouetteInnerR: 18 },
+    drawFull: (ctx, s) => drawBonusRing(ctx, s),
+    state: { x: 0, size: 30, color: '#f5c542', glowColor: '#fff1a6',
+             innerRadius: 18, angle: 0, ringAngle: 0, pulseOffset: 0 },
+  },
+  {
+    name: 'GATE PIECE — SAFE', sizeLabel: 'variable rect (e.g. 90×30 px)',
+    role: 'Pass-through wall opening', hp: 'invulnerable',
+    color: 'Neon green #39ff14', behavior: 'Scrolls down with unsafe siblings',
+    fitRadius: 50,
+    silhouette: { shape: 'rect', gateWidth: 90, gateHeight: 30 },
+    drawFull: (ctx, s) => drawGate(ctx, s),
+    state: { x: 0, color: '#39ff14', isGateSafe: true, gateWidth: 90, gateHeight: 30, angle: 0 },
+  },
+  {
+    name: 'GATE PIECE — UNSAFE', sizeLabel: 'variable rect (e.g. 90×30 px)',
+    role: 'Solid wall — collision = damage', hp: 'invulnerable',
+    color: 'Magenta #ff294f', behavior: 'Scrolls down, paired w/ safe gates',
+    fitRadius: 50,
+    silhouette: { shape: 'rect', gateWidth: 90, gateHeight: 30 },
+    drawFull: (ctx, s) => drawGate(ctx, s),
+    state: { x: 0, color: '#ff294f', isGateSafe: false, gateWidth: 90, gateHeight: 30, angle: 0 },
+  },
+  {
+    name: 'PLAYER SHIP', sizeLabel: '~34 × 26 px (chevron arrow)',
+    role: 'Player drone — apex up, V-notch rear', hp: 'n/a',
+    color: 'Cyan #00eeff', behavior: 'Single chevron polygon, pure cyan glow stack',
+    fitRadius: 28,
+    customSilhouette: (ctx, s) => silhouetteShip(ctx, s),
+    silhouette: {},
+    drawFull: (ctx, s) => drawShip(ctx, s),
+    state: { x: 0, size: 16, color: '#00eeff', angle: 0 },
+  },
+];
+
+// ─── Stage tabs ──────────────────────────────────────────────────────────────
+const stageTabs = document.getElementById('stageTabs');
+function applyStageColor() {
+  STAGE_COLOR = STAGE_ENEMY_COLORS[activeStage - 1];
+  for (const e of enemies) {
+    if (e.usesStageColor) e.state.color = STAGE_COLOR;
+  }
+  for (const btn of stageTabs.children) {
+    btn.classList.toggle('active', Number(btn.dataset.stage) === activeStage);
+  }
+}
+for (let i = 1; i <= 10; i++) {
+  const btn = document.createElement('button');
+  btn.className = 'stage-tab';
+  btn.dataset.stage = i;
+  const color = STAGE_ENEMY_COLORS[i - 1];
+  btn.innerHTML = `<span class="swatch" style="background:${color};color:${color}"></span>STAGE ${i}`;
+  btn.title = STAGE_NAMES[i - 1];
+  btn.addEventListener('click', () => { activeStage = i; applyStageColor(); });
+  stageTabs.appendChild(btn);
+}
+applyStageColor();
+
+// ─── Build cards ─────────────────────────────────────────────────────────────
+const grid = document.getElementById('grid');
+// Auto-fit: each canvas is ~200px, leave 8px margin → usable radius ~92px
+const FIT_RADIUS_PX = 92;
+
+enemies.forEach((e, idx) => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="card-name">${e.name}</div>
+      <div class="card-size">${e.sizeLabel}</div>
+    </div>
+    <dl class="card-meta">
+      <dt>Role</dt><dd>${e.role}</dd>
+      <dt>HP</dt><dd>${e.hp}</dd>
+      <dt>Color</dt><dd>${e.color}</dd>
+      <dt>Behavior</dt><dd>${e.behavior}</dd>
+    </dl>
+    <div class="panes">
+      <div class="pane">
+        <span class="pane-label">In-game render</span>
+        <canvas class="full" data-i="${idx}"></canvas>
+      </div>
+      <div class="pane">
+        <span class="pane-label">Silhouette</span>
+        <canvas class="silhouette" data-i="${idx}"></canvas>
+      </div>
+    </div>
+  `;
+  grid.appendChild(card);
+});
+
+// Resolve canvas DPR + size after layout
+function sizeCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  return dpr;
+}
+
+const fullCanvases = Array.from(document.querySelectorAll('canvas.full'));
+const silCanvases = Array.from(document.querySelectorAll('canvas.silhouette'));
+
+// ─── Main draw loop ──────────────────────────────────────────────────────────
+function tick() {
+  for (let i = 0; i < enemies.length; i++) {
+    const e = enemies[i];
+    // Rotation disabled for reference clarity — pulses/glow still animate.
+
+    const fitScale = FIT_RADIUS_PX / e.fitRadius;
+
+    // Full render
+    const fc = fullCanvases[i];
+    const dprF = sizeCanvas(fc);
+    const fctx = fc.getContext('2d');
+    fctx.setTransform(1, 0, 0, 1, 0, 0);
+    fctx.clearRect(0, 0, fc.width, fc.height);
+    fctx.fillStyle = '#000';
+    fctx.fillRect(0, 0, fc.width, fc.height);
+    fctx.save();
+    fctx.translate(fc.width / 2, fc.height / 2);
+    fctx.scale(fitScale * dprF, fitScale * dprF);
+    e.drawFull(fctx, e.state);
+    fctx.restore();
+
+    // Silhouette
+    const sc = silCanvases[i];
+    const dprS = sizeCanvas(sc);
+    const sctx = sc.getContext('2d');
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.clearRect(0, 0, sc.width, sc.height);
+    sctx.fillStyle = '#000';
+    sctx.fillRect(0, 0, sc.width, sc.height);
+    sctx.save();
+    sctx.translate(sc.width / 2, sc.height / 2);
+    sctx.scale(fitScale * dprS, fitScale * dprS);
+    if (e.customSilhouette) {
+      sctx.fillStyle = '#ffffff';
+      sctx.strokeStyle = '#ffffff';
+      sctx.globalAlpha = 1;
+      clearGlow(sctx);
+      e.customSilhouette(sctx, e.state);
+    } else {
+      drawSilhouette(sctx, { ...e.silhouette, ...e.state, ...(e.silhouette.pts ? { pts: e.silhouette.pts } : {}) });
+    }
+    sctx.restore();
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+</script>
+</body>
+</html>

@@ -76,19 +76,35 @@ function drawDeathScreen() {
 
   ctx.save();
 
-  ctx.fillStyle = '#030303';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, H);
-  starField.draw();
+
+  const deathBg = ctx.createLinearGradient(0, 0, 0, H);
+  deathBg.addColorStop(0, '#020000');
+  deathBg.addColorStop(0.35, '#0a0101');
+  deathBg.addColorStop(0.7, '#0e0202');
+  deathBg.addColorStop(1, '#020000');
+  ctx.fillStyle = deathBg;
+  ctx.fillRect(0, 0, W, H);
+
+  const deathTopGlow = ctx.createRadialGradient(cx, H * 0.22, 0, cx, H * 0.22, Math.max(W, H) * 0.5);
+  deathTopGlow.addColorStop(0, 'rgba(220,30,0,0.14)');
+  deathTopGlow.addColorStop(0.5, 'rgba(160,0,0,0.06)');
+  deathTopGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = deathTopGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  _drawDust(deathDust, W, H);
 
   const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.76);
-  vignette.addColorStop(0, 'rgba(255,32,0,0.05)');
-  vignette.addColorStop(0.45, 'rgba(18,0,0,0.08)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.72)');
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.5, 'rgba(0,0,0,0.16)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.88)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = COLOR_CYAN;
+  ctx.globalAlpha = 0.03;
+  ctx.fillStyle = '#ff3300';
   for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
 
   ctx.textAlign = 'center';
@@ -266,13 +282,30 @@ function drawWinScreen() {
   const reveal = (delay, duration = 420) => Math.max(0, Math.min(1, (elapsed - delay) / duration));
 
   ctx.save();
-  ctx.fillStyle = '#020204';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, H);
 
+  const winBg = ctx.createLinearGradient(0, 0, 0, H);
+  winBg.addColorStop(0, '#020104');
+  winBg.addColorStop(0.3, '#07030f');
+  winBg.addColorStop(0.65, '#0c0418');
+  winBg.addColorStop(1, '#020104');
+  ctx.fillStyle = winBg;
+  ctx.fillRect(0, 0, W, H);
+
+  const winTopGlow = ctx.createRadialGradient(cx, H * 0.22, 0, cx, H * 0.22, Math.max(W, H) * 0.52);
+  winTopGlow.addColorStop(0, 'rgba(139,92,246,0.20)');
+  winTopGlow.addColorStop(0.45, 'rgba(109,40,217,0.08)');
+  winTopGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = winTopGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  _drawDust(winDust, W, H);
+
   const vignette = ctx.createRadialGradient(cx, cy * 0.92, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.8);
-  vignette.addColorStop(0, 'rgba(139,92,246,0.06)');
-  vignette.addColorStop(0.38, 'rgba(10,6,24,0.06)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.5, 'rgba(0,0,0,0.16)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.88)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
@@ -294,7 +327,7 @@ function drawWinScreen() {
   ctx.fillStyle = horizonLine;
   ctx.fillRect(0, bandY, W, 2);
 
-  ctx.globalAlpha = 0.07;
+  ctx.globalAlpha = 0.03;
   ctx.fillStyle = accentBlue;
   for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
   ctx.globalAlpha = 1;

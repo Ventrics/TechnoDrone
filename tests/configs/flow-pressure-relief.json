@@ -1,0 +1,17 @@
+{
+  "name": "flow-pressure-relief",
+  "description": "Conservative global pressure-relief pass: modestly improves heat recovery, dash heat refund, and flow duration to test whether survivability improves without lowering enemy density.",
+  "stageConfig": [],
+  "player": {
+    "HEAT_DECAY": 33,
+    "OVERHEAT_LOCKOUT": 1350
+  },
+  "dash": {
+    "COOLDOWN_MS": 960,
+    "COOLDOWN_OFFENSIVE": 640,
+    "HEAT_REFUND": 38
+  },
+  "flowState": {
+    "FLOW_STATE_DURATION": 8000
+  }
+}

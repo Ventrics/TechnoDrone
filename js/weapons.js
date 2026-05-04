@@ -200,7 +200,9 @@ const bullets = {
       const x = drone.x, y = drone.y - 14;
       const baseAngle = -Math.PI / 2; // straight up
       if (laserActive) {
-        [-0.22, -0.11, 0, 0.11, 0.22].forEach(a => {
+        // 3-beam fan, redistributed (not truncated) from the original 5-beam spread
+        // to preserve ~75% of screen coverage with -40% DPS as the rebalance.
+        [-0.165, 0, 0.165].forEach(a => {
           this.fire(x, y, baseAngle + a, { damage: Math.max(1, Math.ceil(player.effectiveDamage * 0.9)), len: 42, tint: '#39ff14', laser: true });
         });
         player.laserFuel = Math.max(0, player.laserFuel - 10);
@@ -564,10 +566,7 @@ const pickups = {
       }
       if (dist < 25) {
         if (player.altFireType === 'laser') {
-          player.laserFuel = Math.min(
-            player.LASER_MAX_FUEL,
-            player.laserFuel + player.LASER_MAX_FUEL * 0.15
-          );
+          player.laserFuel = player.LASER_MAX_FUEL;
         } else {
           player.activateAltFire(orb.type);
           streakCallout.showAltFire(orb.type);
@@ -851,6 +850,7 @@ const screenNuke = {
         smokeParticles.spawn(s.x, s.y, s.color);
         stage.onKill(s, true);
         shards._destroyEntityGfx?.(s);
+        window.__TD_LEDGER__?.markRemoved(s, 'killed');
         shards.pool.splice(i, 1);
       }
     }

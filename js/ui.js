@@ -1,6 +1,67 @@
 const TITLE_WORDMARK_FONT = '"cc-running-with-scissors-up", "anatol-mn", sans-serif';
 const UI_DISPLAY_FONT = '"manifold-extd-cf", "Eurostile Extended", "Eurostile Extended #2", "Microgramma D Extended", "Microgramma", sans-serif';
 
+// --- Shared floating dust particle factory ---
+function _newDustParticle(colors, resetAtBottom) {
+  return {
+    x: Math.random() * 1920,
+    y: resetAtBottom ? 1080 + Math.random() * 80 : Math.random() * 1080,
+    vx: (Math.random() - 0.5) * 0.15,
+    vy: -(Math.random() * 0.14 + 0.03),
+    r: Math.random() * 1.5 + 0.25,
+    alpha: Math.random() * 0.65 + 0.2,
+    twinkleSpeed: Math.random() * 0.004 + 0.001,
+    twinkleOffset: Math.random() * Math.PI * 2,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  };
+}
+
+function _updateDust(dustArr, colors, delta) {
+  const now = getNow();
+  dustArr.forEach((p, i) => {
+    p.x += p.vx * delta * 0.06;
+    p.y += p.vy * delta * 0.06;
+    p.alpha = 0.2 + 0.6 * (0.5 + 0.5 * Math.sin(now * p.twinkleSpeed + p.twinkleOffset));
+    if (p.y < -10) dustArr[i] = _newDustParticle(colors, true);
+  });
+}
+
+function _drawDust(dustArr, W, H) {
+  dustArr.forEach(p => {
+    const px = (p.x / 1920) * W;
+    const py = (p.y / 1080) * H;
+    ctx.save();
+    ctx.globalAlpha = p.alpha * 0.88;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(px, py, p.r * (W / 1920), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// --- Title screen dust ---
+const _DUST_COLORS = ['#ffffff', '#ffffff', '#c4b5fd', '#a78bfa', '#818cf8'];
+const titleDust = Array.from({ length: 200 }, () => _newDustParticle(_DUST_COLORS, false));
+function updateTitleDust(delta) { _updateDust(titleDust, _DUST_COLORS, delta); }
+
+// --- Leaderboard screen dust ---
+const _LB_DUST_COLORS = ['#ffffff', '#ffffff', '#31afd4', '#6366f1', '#8b5cf6'];
+const lbDust = Array.from({ length: 160 }, () => _newDustParticle(_LB_DUST_COLORS, false));
+function updateLbDust(delta) { _updateDust(lbDust, _LB_DUST_COLORS, delta); }
+
+// --- Game Over screen dust ---
+const _DEATH_DUST_COLORS = ['#ffffff', '#ff5544', '#ff3300', '#ff9966', '#ffffff'];
+const deathDust = Array.from({ length: 160 }, () => _newDustParticle(_DEATH_DUST_COLORS, false));
+function updateDeathDust(delta) { _updateDust(deathDust, _DEATH_DUST_COLORS, delta); }
+
+// --- Mission Complete screen dust ---
+const _WIN_DUST_COLORS = ['#ffffff', '#d8b4fe', '#fb29fd', '#a78bfa', '#ffffff'];
+const winDust = Array.from({ length: 160 }, () => _newDustParticle(_WIN_DUST_COLORS, false));
+function updateWinDust(delta) { _updateDust(winDust, _WIN_DUST_COLORS, delta); }
+
 const lbStars = Array.from({ length: 80 }, () => ({
   x: Math.random() * 1920,
   y: Math.random() * 1080,
@@ -39,6 +100,7 @@ const lbOrbs = Array.from({ length: 6 }, (_, i) => ({
 
 function updateLbBg(delta) {
   const now = getNow();
+  updateLbDust(delta);
   lbStars.forEach(s => {
     s.alpha = 0.3 + 0.4 * (0.5 + 0.5 * Math.sin(now * s.twinkleSpeed + s.twinkleOffset));
   });
@@ -57,66 +119,30 @@ function drawLbBg() {
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
 
-  ctx.fillStyle = '#04050a';
+  ctx.fillStyle = '#010103';
   ctx.fillRect(0, 0, W, H);
 
   const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#06040d');
-  sky.addColorStop(0.28, '#110820');
-  sky.addColorStop(0.6, '#180b2c');
-  sky.addColorStop(1, '#04050a');
+  sky.addColorStop(0, '#020106');
+  sky.addColorStop(0.28, '#060312');
+  sky.addColorStop(0.6, '#0a041a');
+  sky.addColorStop(1, '#010103');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
 
   const topGlow = ctx.createRadialGradient(cx, H * 0.18, 0, cx, H * 0.18, Math.max(W, H) * 0.5);
-  topGlow.addColorStop(0, 'rgba(139,92,246,0.14)');
-  topGlow.addColorStop(0.45, 'rgba(46,59,240,0.08)');
+  topGlow.addColorStop(0, 'rgba(49,175,212,0.18)');
+  topGlow.addColorStop(0.45, 'rgba(99,102,241,0.10)');
   topGlow.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, W, H);
 
-  const horizonY = H * 0.72;
-  const gridDrift = (titleGridOff * 0.016) % 1;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, horizonY - 6, W, H - horizonY + 6);
-  ctx.clip();
-  ctx.globalAlpha = 0.82;
-  ctx.strokeStyle = 'rgba(49,175,212,0.22)';
-  ctx.lineWidth = 1;
-
-  for (let i = 0; i < 11; i++) {
-    const t = (i / 10 + gridDrift) % 1;
-    const y = horizonY + Math.pow(t, 1.8) * (H - horizonY + 80);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-
-  const vanishingX = cx;
-  const bottomSpread = W * 0.58;
-  for (let i = -7; i <= 7; i++) {
-    const x = cx + i * (bottomSpread / 7);
-    ctx.beginPath();
-    ctx.moveTo(x, H + 40);
-    ctx.lineTo(vanishingX + i * 12, horizonY);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  const horizonGlow = ctx.createLinearGradient(0, horizonY - 16, 0, horizonY + 24);
-  horizonGlow.addColorStop(0, 'rgba(0,0,0,0)');
-  horizonGlow.addColorStop(0.42, 'rgba(49,175,212,0.08)');
-  horizonGlow.addColorStop(0.68, 'rgba(139,92,246,0.10)');
-  horizonGlow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = horizonGlow;
-  ctx.fillRect(0, horizonY - 16, W, 40);
+  _drawDust(lbDust, W, H);
 
   const vignette = ctx.createRadialGradient(cx, cy * 0.86, Math.min(W, H) * 0.12, cx, cy, Math.max(W, H) * 0.78);
-  vignette.addColorStop(0, 'rgba(46,59,240,0.04)');
-  vignette.addColorStop(0.45, 'rgba(12,8,24,0.12)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.78)');
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.5, 'rgba(0,0,0,0.16)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.88)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
@@ -715,96 +741,45 @@ function drawTitleScreen() {
   starField.draw();
 
   const backdrop = ctx.createLinearGradient(0, 0, 0, H);
-  backdrop.addColorStop(0, '#05040b');
-  backdrop.addColorStop(0.28, '#13081f');
-  backdrop.addColorStop(0.62, '#1f0c31');
-  backdrop.addColorStop(1, '#05040b');
+  backdrop.addColorStop(0, '#020104');
+  backdrop.addColorStop(0.28, '#07030f');
+  backdrop.addColorStop(0.62, '#0d0519');
+  backdrop.addColorStop(1, '#020104');
   ctx.fillStyle = backdrop;
   ctx.fillRect(0, 0, W, H);
 
   const topGlow = ctx.createRadialGradient(cx, H * 0.2, 0, cx, H * 0.2, Math.max(W, H) * 0.54);
-  topGlow.addColorStop(0, 'rgba(251,41,253,0.16)');
-  topGlow.addColorStop(0.42, 'rgba(139,92,246,0.09)');
+  topGlow.addColorStop(0, 'rgba(139,92,246,0.22)');
+  topGlow.addColorStop(0.42, 'rgba(109,40,217,0.10)');
   topGlow.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, W, H);
 
-  const sideGlowLeft = ctx.createRadialGradient(W * 0.18, H * 0.58, 0, W * 0.18, H * 0.58, Math.max(W, H) * 0.34);
-  sideGlowLeft.addColorStop(0, 'rgba(66,22,210,0.16)');
-  sideGlowLeft.addColorStop(1, 'rgba(66,22,210,0)');
+  const sideGlowLeft = ctx.createRadialGradient(W * 0.18, H * 0.55, 0, W * 0.18, H * 0.55, Math.max(W, H) * 0.32);
+  sideGlowLeft.addColorStop(0, 'rgba(109,40,217,0.12)');
+  sideGlowLeft.addColorStop(1, 'rgba(109,40,217,0)');
   ctx.fillStyle = sideGlowLeft;
   ctx.fillRect(0, 0, W, H);
 
-  const sideGlowRight = ctx.createRadialGradient(W * 0.82, H * 0.52, 0, W * 0.82, H * 0.52, Math.max(W, H) * 0.34);
-  sideGlowRight.addColorStop(0, 'rgba(221,50,179,0.13)');
-  sideGlowRight.addColorStop(1, 'rgba(221,50,179,0)');
+  const sideGlowRight = ctx.createRadialGradient(W * 0.82, H * 0.5, 0, W * 0.82, H * 0.5, Math.max(W, H) * 0.32);
+  sideGlowRight.addColorStop(0, 'rgba(139,92,246,0.10)');
+  sideGlowRight.addColorStop(1, 'rgba(139,92,246,0)');
   ctx.fillStyle = sideGlowRight;
   ctx.fillRect(0, 0, W, H);
 
-  const horizonY = H * 0.76;
-  const gridColor = 'rgba(125,98,255,0.22)';
-  const gridDrift = (now * 0.00008) % 1;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, horizonY - 6, W, H - horizonY + 6);
-  ctx.clip();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = gridColor;
-  ctx.lineWidth = 1;
-
-  for (let i = 0; i < 11; i++) {
-    const t = (i / 10 + gridDrift) % 1;
-    const y = horizonY + Math.pow(t, 1.8) * (H - horizonY + 80);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-
-  const vanishingX = cx;
-  const bottomSpread = W * 0.56;
-  for (let i = -7; i <= 7; i++) {
-    const x = cx + i * (bottomSpread / 7);
-    ctx.beginPath();
-    ctx.moveTo(x, H + 40);
-    ctx.lineTo(vanishingX + i * 10, horizonY);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  const horizonGlow = ctx.createLinearGradient(0, horizonY - 18, 0, horizonY + 24);
-  horizonGlow.addColorStop(0, 'rgba(0,0,0,0)');
-  horizonGlow.addColorStop(0.45, 'rgba(129,140,248,0.16)');
-  horizonGlow.addColorStop(0.6, 'rgba(221,50,179,0.18)');
-  horizonGlow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = horizonGlow;
-  ctx.fillRect(0, horizonY - 18, W, 42);
-
-  // Horizon scan beam — drifts slowly downward through the grid
-  {
-    const beamY = horizonY + (H - horizonY) * titleScanBeamPos;
-    if (beamY > horizonY && beamY < H) {
-      ctx.save();
-      ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(200,170,255,0.04)';
-      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
-      ctx.lineWidth = 4;  ctx.strokeStyle = 'rgba(215,185,255,0.09)';
-      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
-      ctx.lineWidth = 1;  ctx.strokeStyle = 'rgba(235,215,255,0.22)';
-      ctx.beginPath(); ctx.moveTo(0, beamY); ctx.lineTo(W, beamY); ctx.stroke();
-      ctx.restore();
-    }
-  }
+  // Floating dust particles
+  _drawDust(titleDust, W, H);
 
   const vignette = ctx.createRadialGradient(cx, cy * 0.88, Math.min(W, H) * 0.16, cx, cy, Math.max(W, H) * 0.8);
-  vignette.addColorStop(0, 'rgba(99,60,180,0.04)');
-  vignette.addColorStop(0.45, 'rgba(16,8,28,0.12)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.82)');
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.5, 'rgba(0,0,0,0.18)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.88)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
   ctx.save();
-  ctx.globalAlpha = 0.05;
-  ctx.fillStyle = '#c4b5fd';
+  ctx.globalAlpha = 0.03;
+  ctx.fillStyle = '#a855f7';
   for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
   ctx.restore();
 
@@ -868,7 +843,7 @@ function drawTitleScreen() {
     }
   }
 
-  drawNeonWord('Techno Drone', headingY, headingFontSize, ['#5b21b6', '#6d28d9', '#8b5cf6', '#c4b5fd']);
+  drawNeonWord('Techno Drone', headingY, headingFontSize, ['#4c1d95', '#7c3aed', '#a855f7', '#e9d5ff']);
 
   // Snap bloom burst on convergence
   if (titleSnapDecay > 0) {
@@ -877,7 +852,7 @@ function drawTitleScreen() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#c4b5fd';
+    ctx.shadowColor = '#e9d5ff';
     ctx.shadowBlur = 36 * titleSnapDecay;
     ctx.globalAlpha = titleSnapDecay * 0.7;
     ctx.fillText('Techno Drone', cx, headingY);
@@ -1110,7 +1085,6 @@ function getClickTargetAt(targets, x, y) {
 
 let paused       = false;
 let pauseSel     = 0;
-let soundEnabled = true;
 
 function drawPauseMenu() {
   const vol = parseInt(localStorage.getItem('drone_music_vol') || '20', 10);
@@ -1163,49 +1137,6 @@ function drawPauseMenu() {
   ctx.restore();
 }
 
-function drawCenterWatermark() {
-  return;
-}
-
-function _drawDiamond(ix, iy, iconH, filled, pulse) {
-  ctx.beginPath();
-  ctx.moveTo(ix, iy - iconH);
-  ctx.lineTo(ix + iconH * 0.6, iy);
-  ctx.lineTo(ix, iy + iconH);
-  ctx.lineTo(ix - iconH * 0.6, iy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-}
-
-function _divider(tx, cy, barW, alpha = 0.12) {
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(tx, cy, barW, 1);
-  ctx.globalAlpha = 1;
-  return cy + 20;
-}
-
-function _label(tx, cy, text, color = '#555555', size = 11) {
-  ctx.font = `${size}px ${UI_DISPLAY_FONT}`;
-  ctx.fillStyle = color;
-  clearGlow();
-  ctx.fillText(text, tx, cy);
-  return cy + size + 5;
-}
-
-function _bar(tx, cy, barW, frac, color, trackAlpha = 0.14, h = 8) {
-  ctx.globalAlpha = trackAlpha;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(tx, cy, barW, h);
-  ctx.globalAlpha = 1;
-  if (frac > 0) {
-    ctx.fillStyle = color;
-    ctx.fillRect(tx, cy, barW * Math.max(0, Math.min(1, frac)), h);
-  }
-  return cy + h + 6;
-}
-
 function _drawPlayAreaCorners() {
   if (typeof PLAY_X === 'undefined') return;
   const stageColor = STAGE_ENEMY_COLORS[Math.min(stage.current - 1, 9)];
@@ -1239,6 +1170,145 @@ function _drawPlayAreaCorners() {
   });
 
   clearGlow();
+  ctx.restore();
+}
+
+function _crtTracePath(x, y, w, h, r) {
+  const rad = Math.max(0, Math.min(r, Math.min(w, h) * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.lineTo(x + w - rad, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+  ctx.lineTo(x + w, y + h - rad);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+  ctx.lineTo(x + rad, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+  ctx.lineTo(x, y + rad);
+  ctx.quadraticCurveTo(x, y, x + rad, y);
+  ctx.closePath();
+}
+
+// CRT bezel cache — the bezel is static, so we render it once to an offscreen
+// canvas and just blit it each frame instead of redrawing ~270 scanline rects.
+let _crtBezelCache = null;
+let _crtBezelCacheKey = '';
+
+function _crtTracePathOn(c, x, y, w, h, r) {
+  const rad = Math.max(0, Math.min(r, Math.min(w, h) * 0.5));
+  c.beginPath();
+  c.moveTo(x + rad, y);
+  c.lineTo(x + w - rad, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + rad);
+  c.lineTo(x + w, y + h - rad);
+  c.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+  c.lineTo(x + rad, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - rad);
+  c.lineTo(x, y + rad);
+  c.quadraticCurveTo(x, y, x + rad, y);
+  c.closePath();
+}
+
+function _renderCRTBezelToCache(w, h) {
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const octx = off.getContext('2d');
+
+  // Outer dark bezel "case"
+  _crtTracePathOn(octx, 0, 0, w, h, 8);
+  octx.fillStyle = '#04060c';
+  octx.globalAlpha = 0.92;
+  octx.fill();
+
+  // Inset screen area (subtle gradient suggesting curved CRT glass)
+  const sx = 4, sy = 4, sw = w - 8, sh = h - 8;
+  const grad = octx.createLinearGradient(0, sy, 0, sy + sh);
+  grad.addColorStop(0,    'rgba(8, 14, 28, 0.95)');
+  grad.addColorStop(0.5,  'rgba(12, 20, 38, 0.92)');
+  grad.addColorStop(1,    'rgba(6, 10, 22, 0.96)');
+  _crtTracePathOn(octx, sx, sy, sw, sh, 6);
+  octx.fillStyle = grad;
+  octx.globalAlpha = 1;
+  octx.fill();
+
+  // Faint scanline overlay (clipped to screen area)
+  octx.save();
+  _crtTracePathOn(octx, sx, sy, sw, sh, 6);
+  octx.clip();
+  octx.globalAlpha = 0.045;
+  octx.fillStyle = '#000000';
+  for (let ly = sy; ly < sy + sh; ly += 3) {
+    octx.fillRect(sx, ly, sw, 1);
+  }
+  // Subtle horizontal screen-glow band (top hot-spot, like CRT phosphor)
+  const hot = octx.createLinearGradient(0, sy, 0, sy + sh * 0.55);
+  hot.addColorStop(0, 'rgba(120, 180, 255, 0.06)');
+  hot.addColorStop(1, 'rgba(120, 180, 255, 0)');
+  octx.globalAlpha = 1;
+  octx.fillStyle = hot;
+  octx.fillRect(sx, sy, sw, sh * 0.55);
+  octx.restore();
+
+  // Outer hairline border (cyan accent — the bezel edge)
+  _crtTracePathOn(octx, 0.5, 0.5, w - 1, h - 1, 8);
+  octx.globalAlpha = 0.42;
+  octx.shadowColor = '#31afd4';
+  octx.shadowBlur = 6;
+  octx.strokeStyle = '#31afd4';
+  octx.lineWidth = 1;
+  octx.stroke();
+  octx.shadowBlur = 0;
+
+  // Inner hairline (the screen's edge)
+  _crtTracePathOn(octx, sx + 0.5, sy + 0.5, sw - 1, sh - 1, 6);
+  octx.globalAlpha = 0.20;
+  octx.strokeStyle = '#7ce0ff';
+  octx.lineWidth = 1;
+  octx.stroke();
+
+  return off;
+}
+
+function _drawCRTBezel(x, y, w, h, flicker = 0) {
+  const key = `${w | 0}x${h | 0}`;
+  if (!_crtBezelCache || _crtBezelCacheKey !== key) {
+    _crtBezelCache = _renderCRTBezelToCache(w | 0, h | 0);
+    _crtBezelCacheKey = key;
+  }
+  ctx.drawImage(_crtBezelCache, x | 0, y | 0);
+  // Optional flow-state flicker — single cheap fillRect, not a per-row redraw
+  if (flicker > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.05 * flicker;
+    ctx.fillStyle = '#7ce0ff';
+    ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+    ctx.restore();
+  }
+}
+
+function _drawCRTCell(x, y, w, h, accent = '#31afd4') {
+  ctx.save();
+  // Cell border (very subtle — the sub-display frame)
+  _crtTracePath(x + 0.5, y + 0.5, w - 1, h - 1, 4);
+  ctx.globalAlpha = 0.26;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Tiny corner brackets at top-left and bottom-right for instrument feel
+  ctx.globalAlpha = 0.55;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 4;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.2;
+  const bL = 8;
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + bL);
+  ctx.lineTo(x + 2, y + 2);
+  ctx.lineTo(x + bL, y + 2);
+  ctx.moveTo(x + w - bL, y + h - 2);
+  ctx.lineTo(x + w - 2, y + h - 2);
+  ctx.lineTo(x + w - 2, y + h - bL);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1279,6 +1349,9 @@ function drawHUD() {
   const barW = pw - pad * 2;
   ctx.globalAlpha = 1;
 
+  // CRT terminal bezel + scanlines (drawn behind all content)
+  _drawCRTBezel(px, py, pw, ph, 0);
+
   const traceSlantedBox = (x, y, w, h, cut = 8) => {
     const c = Math.max(2, Math.min(cut, Math.min(w, h) * 0.45));
     ctx.beginPath();
@@ -1286,6 +1359,20 @@ function drawHUD() {
     ctx.lineTo(x + w, y);
     ctx.lineTo(x + w - c, y + h);
     ctx.lineTo(x, y + h);
+    ctx.closePath();
+  };
+
+  const traceDroneIcon = (cx, cy, w, h, flipped = false) => {
+    const halfW = w / 2;
+    const halfH = h / 2;
+    const dir = flipped ? -1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx,                cy - halfH * dir);
+    ctx.lineTo(cx + halfW * 0.92, cy + halfH * dir * 0.78);
+    ctx.lineTo(cx + halfW * 0.45, cy + halfH * dir * 0.42);
+    ctx.lineTo(cx,                cy + halfH * dir);
+    ctx.lineTo(cx - halfW * 0.45, cy + halfH * dir * 0.42);
+    ctx.lineTo(cx - halfW * 0.92, cy + halfH * dir * 0.78);
     ctx.closePath();
   };
 
@@ -1335,7 +1422,7 @@ function drawHUD() {
   const drawStatusCluster = (x, y, width, count, filledCount, color, label, activeReady = false, labelColor = hudMuted, valueColor = '#ffffff') => {
     const gap = 12;
     const indicatorWidth = Math.min(width, 240);
-    const cellW = Math.max(48, Math.floor((indicatorWidth - gap * (count - 1)) / count));
+    const cellW = Math.max(28, Math.floor((indicatorWidth - gap * (count - 1)) / count));
     const cellH = 16;
     const pulse = 0.72 + 0.28 * (Math.sin(getNow() * 0.015) * 0.5 + 0.5);
     ctx.save();
@@ -1385,6 +1472,89 @@ function drawHUD() {
     return rowY + cellH + Math.round(18 * uiScale);
   };
 
+  const drawDroneCluster = (x, y, width, count, filledCount, color, label, activeReady = false, labelColor = hudMuted, valueColor = '#ffffff', flipped = false) => {
+    const gap = 6;
+    const indicatorWidth = Math.min(width, 240);
+    const cellW = Math.max(20, Math.floor((indicatorWidth - gap * (count - 1)) / count));
+    const cellH = Math.round(26 * uiScale);
+    const pulse = 0.72 + 0.28 * (Math.sin(getNow() * 0.015) * 0.5 + 0.5);
+    ctx.save();
+    const labelY = y;
+    ctx.font = `bold ${Math.round(13 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = labelColor;
+    setGlow(color, 10);
+    ctx.fillText(label, x, labelY);
+    clearGlow();
+
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${Math.round(18 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.94;
+    ctx.fillStyle = valueColor;
+    setGlow(color, activeReady ? 14 : 10);
+    ctx.fillText(String(filledCount), x + indicatorWidth, labelY - 2);
+    clearGlow();
+
+    ctx.textAlign = 'left';
+    const rowY = labelY + Math.round(28 * uiScale);
+    for (let i = 0; i < count; i++) {
+      const cx = x + i * (cellW + gap) + cellW / 2;
+      const cy = rowY + cellH / 2;
+      const filled = i < filledCount;
+      const cellAlpha = filled ? (activeReady ? pulse : 0.95) : 0.32;
+
+      if (filled) {
+        ctx.globalAlpha = cellAlpha * 0.22;
+        ctx.fillStyle = color;
+        traceDroneIcon(cx, cy + 1, cellW, cellH, flipped);
+        ctx.fill();
+
+        ctx.globalAlpha = cellAlpha;
+        ctx.fillStyle = color;
+        setGlow(color, activeReady ? 14 : 10);
+        traceDroneIcon(cx, cy, cellW, cellH, flipped);
+        ctx.fill();
+        clearGlow();
+
+        ctx.globalAlpha = cellAlpha * 0.85;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 0.8;
+        traceDroneIcon(cx, cy, cellW, cellH, flipped);
+        ctx.stroke();
+      } else {
+        ctx.globalAlpha = cellAlpha;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        setGlow(color, 4);
+        traceDroneIcon(cx, cy, cellW, cellH, flipped);
+        ctx.stroke();
+        clearGlow();
+      }
+    }
+    ctx.restore();
+    return rowY + cellH + Math.round(18 * uiScale);
+  };
+
+  const drawHighScoreLine = (x, y) => {
+    ctx.save();
+    ctx.font = `bold ${Math.round(11 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = scoreLabelColor;
+    setGlow(scoreGlow, 8);
+    ctx.fillText('HIGH SCORE', x, y);
+    clearGlow();
+
+    const valueY = y + Math.round(15 * uiScale);
+    ctx.font = `bold ${Math.round(17 * uiScale)}px ${UI_DISPLAY_FONT}`;
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = textPrimary;
+    setGlow(scoreGlow, 10);
+    ctx.fillText((save && save.highScore ? save.highScore : 0).toLocaleString(), x, valueY);
+    clearGlow();
+    ctx.restore();
+    return valueY + Math.round(17 * uiScale) + Math.round(20 * uiScale);
+  };
+
   const drawStageReadout = (x, y, width) => {
     const stageValue = `${Math.min(stage.current, 10)}`;
     ctx.save();
@@ -1419,78 +1589,44 @@ function drawHUD() {
 
   let cy = py + pad;
 
+  // Cell 1: SCORE + HIGH SCORE
+  const cell1Top = cy - Math.round(8 * uiScale);
   cy = drawArcadeCounter(tx, cy, barW, 'SCORE', player.score.toLocaleString(), scoreLabelColor, scoreGlow, scoreColor, scoreFontSize, false);
-  cy = drawArcadeCounter(tx, cy, barW, 'KILLS', stage.totalKills.toLocaleString(), killsLabelColor, killsGlow, killsColor, killsFontSize, true);
+  cy = drawHighScoreLine(tx, cy - Math.round(18 * uiScale));
+  const cell1Bot = cy - Math.round(6 * uiScale);
 
-  cy += Math.round(10 * uiScale);
-  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, player.lives)), livesColor, 'LIVES', false, livesLabelColor, livesValueColor);
-  cy += Math.round(2 * uiScale);
-  cy = drawStatusCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASS DROP', player.ultReady, nukeLabelColor, nukeValueColor);
-  cy += Math.round(10 * uiScale);
-  cy = drawStageReadout(tx, cy, Math.min(barW, 240));
+  // Cell 2: KILLS
+  const cell2Top = cell1Bot + Math.round(4 * uiScale);
+  cy = cell2Top + Math.round(8 * uiScale);
+  cy = drawArcadeCounter(tx, cy, barW, 'KILLS', stage.totalKills.toLocaleString(), killsLabelColor, killsGlow, killsColor, killsFontSize, true);
+  const cell2Bot = cy - Math.round(8 * uiScale);
+
+  // Cell 3: STATUS (LIVES + BASS DROP)
+  const cell3Top = cell2Bot + Math.round(4 * uiScale);
+  cy = cell3Top + Math.round(10 * uiScale);
+  cy = drawDroneCluster(tx, cy, Math.min(barW, 240), 6, Math.max(0, Math.min(6, player.lives)), livesColor, 'LIVES', false, livesLabelColor, livesValueColor, false);
+  cy += Math.round(4 * uiScale);
+  // Hairline divider between LIVES and BASS DROP inside the status cell
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.strokeStyle = '#7ce0ff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tx + 4, cy - Math.round(2 * uiScale));
+  ctx.lineTo(tx + barW - 4, cy - Math.round(2 * uiScale));
+  ctx.stroke();
+  ctx.restore();
+  cy = drawDroneCluster(tx, cy, Math.min(barW, 240), 3, Math.max(0, Math.min(3, nukeUsesLeft)), player.ultReady ? nukeReadyColor : nukeColor, 'BASS DROP', player.ultReady, nukeLabelColor, nukeValueColor, true);
+  const cell3Bot = cy - Math.round(2 * uiScale);
+
+  // Draw cell frames on top (hairline + corner brackets — instrument-cluster feel)
+  const cellX = tx - Math.round(10 * uiScale);
+  const cellW = barW + Math.round(20 * uiScale);
+  _drawCRTCell(cellX, cell1Top, cellW, cell1Bot - cell1Top, scoreGlow);
+  _drawCRTCell(cellX, cell2Top, cellW, cell2Bot - cell2Top, killsGlow);
+  _drawCRTCell(cellX, cell3Top, cellW, cell3Bot - cell3Top, livesColor);
 
   _drawPlayAreaCorners();
-  ctx.restore();
-}
-
-let _vignetteCanvas = null;
-let _scanlineCanvas = null;
-let _overlayW = 0, _overlayH = 0;
-
-function _buildOverlayCache() {
-  const W = PLAY_W, H = PLAY_H;
-  if (_overlayW === W && _overlayH === H && _vignetteCanvas && _scanlineCanvas) return;
-  _overlayW = W;
-  _overlayH = H;
-
-  _vignetteCanvas = document.createElement('canvas');
-  _vignetteCanvas.width = W;
-  _vignetteCanvas.height = H;
-  const vc = _vignetteCanvas.getContext('2d');
-  const vg = vc.createRadialGradient(W / 2, H / 2, H * 0.22, W / 2, H / 2, Math.max(W, H) * 0.78);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.72)');
-  vc.fillStyle = vg;
-  vc.fillRect(0, 0, W, H);
-
-  _scanlineCanvas = document.createElement('canvas');
-  _scanlineCanvas.width = W;
-  _scanlineCanvas.height = H;
-  const sc = _scanlineCanvas.getContext('2d');
-  sc.globalAlpha = 0.028;
-  sc.fillStyle = '#000000';
-  for (let y = 0; y < H; y += 4) sc.fillRect(0, y, W, 2);
-}
-
-function drawVignetteAndScanlines() {
-  // Vignette, scanlines, and near-death red vignette are now handled by
-  // the GPU CRTFilter in pixi-post.js. setNearDeath() is called each frame
-  // from game.js. Nothing to draw here on the Canvas 2D side.
-}
-
-
-let runtimeErrorMessage = '';
-
-function reportRuntimeError(err) {
-  const message = err && err.stack ? err.stack : String(err);
-  runtimeErrorMessage = message;
-  document.body.setAttribute('data-runtime-error', message);
-  console.error(err);
-}
-
-function drawRuntimeErrorOverlay() {
-  if (!runtimeErrorMessage) return;
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.88)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#ff5555';
-  ctx.font = `bold 18px ${UI_DISPLAY_FONT}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  const lines = runtimeErrorMessage.split(/\r?\n/).slice(0, 8);
-  ctx.fillText('RUNTIME ERROR', 20, 20);
-  ctx.fillStyle = '#ffffff';
-  lines.forEach((line, i) => ctx.fillText(line, 20, 56 + i * 22));
   ctx.restore();
 }
 
@@ -1538,6 +1674,7 @@ function startTutorialFromDevMenu() {
 
 function updateTitle(delta) {
   waveField.update(delta);
+  updateTitleDust(delta);
   titleGridOff += delta * 0.022;
   titleScanBeamPos = (titleScanBeamPos + delta * 0.0002) % 1;
   if (titleIntroLive && titleIntroT < 1) {
@@ -1581,88 +1718,7 @@ function updateTitle(delta) {
 }
 
 // --- DEV MENU ---
-const DEV_BTN_W = 110, DEV_BTN_H = 54, DEV_COLS = 5, DEV_ROWS = 2;
-
-function drawDevMenu() {
-  const W = canvas.width, H = canvas.height;
-  ctx.fillStyle = '#050508';
-  ctx.fillRect(0, 0, W, H);
-
-  // Grid lines (subtle)
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
-  // Title
-  ctx.save();
-  ctx.font = `bold 13px ${UI_DISPLAY_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.letterSpacing = '4px';
-  ctx.fillStyle = '#ff3366';
-  ctx.fillText('DEV — STAGE SELECT', W / 2, 52);
-  ctx.restore();
-
-  // Stage buttons
-  const totalW = DEV_COLS * DEV_BTN_W + (DEV_COLS - 1) * 16;
-  const startX = (W - totalW) / 2;
-  const startY = H / 2 - DEV_ROWS * (DEV_BTN_H + 16) / 2 - 20;
-
-  for (let i = 0; i < 10; i++) {
-    const col = i % DEV_COLS, row = Math.floor(i / DEV_COLS);
-    const bx = startX + col * (DEV_BTN_W + 16);
-    const by = startY + row * (DEV_BTN_H + 16);
-    _drawDevBtn(ctx, bx, by, DEV_BTN_W, DEV_BTN_H, i + 1);
-  }
-
-  // Fast Stage toggle
-  const toggleY = startY + DEV_ROWS * (DEV_BTN_H + 16) + 20;
-  const toggleW = 220, toggleH = 40;
-  const toggleX = W / 2 - toggleW / 2;
-  ctx.save();
-  ctx.strokeStyle = devFastStage ? '#00ffcc' : 'rgba(255,255,255,0.2)';
-  ctx.lineWidth = 1.5;
-  ctx.fillStyle = devFastStage ? 'rgba(0,255,204,0.1)' : 'rgba(255,255,255,0.04)';
-  _roundRect(ctx, toggleX, toggleY, toggleW, toggleH, 6);
-  ctx.fill(); ctx.stroke();
-  ctx.font = `bold 11px ${UI_DISPLAY_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = devFastStage ? '#00ffcc' : 'rgba(255,255,255,0.5)';
-  ctx.fillText('FAST STAGE  ' + (devFastStage ? '[ON]' : '[OFF]'), W / 2, toggleY + 25);
-  ctx.restore();
-
-  // Tutorial button
-  const tutorialY = toggleY + toggleH + 16;
-  const tutorialW = 220, tutorialH = 40;
-  const tutorialX = W / 2 - tutorialW / 2;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(170,85,255,0.55)';
-  ctx.lineWidth = 1.5;
-  ctx.fillStyle = 'rgba(170,85,255,0.1)';
-  _roundRect(ctx, tutorialX, tutorialY, tutorialW, tutorialH, 6);
-  ctx.fill(); ctx.stroke();
-  ctx.font = `bold 11px ${UI_DISPLAY_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#aa55ff';
-  ctx.fillText('PLAY TUTORIAL', W / 2, tutorialY + 25);
-  ctx.restore();
-
-  // Back button
-  const backY = tutorialY + tutorialH + 16;
-  const backW = 120, backH = 36;
-  const backX = W / 2 - backW / 2;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.lineWidth = 1;
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  _roundRect(ctx, backX, backY, backW, backH, 6);
-  ctx.fill(); ctx.stroke();
-  ctx.font = `11px ${UI_DISPLAY_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.fillText('[ESC]  BACK', W / 2, backY + 23);
-  ctx.restore();
-}
+const DEV_COLS = 5, DEV_ROWS = 2;
 
 function _drawDevBtn(ctx, x, y, w, h, stageNum) {
   const colors = ['#ff3366','#ff6600','#ffcc00','#00ff88','#00ccff',
@@ -1706,56 +1762,389 @@ function _roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function handleDevMenuClick(e) {
-  const W = canvas.width, H = canvas.height;
-  const totalW = DEV_COLS * DEV_BTN_W + (DEV_COLS - 1) * 16;
-  const startX = (W - totalW) / 2;
-  const startY = H / 2 - DEV_ROWS * (DEV_BTN_H + 16) / 2 - 20;
+function getDevAnalyticsSnapshot() {
+  const runs = Array.isArray(save.runs) ? save.runs : [];
+  const base = typeof analytics !== 'undefined' ? analytics : null;
+  const stageReachCounts = Array(10).fill(0);
+  const deathStageCounts = Array(10).fill(0);
+  let totalRuns = 0;
+  let totalScore = 0;
+  let totalKills = 0;
+  let completions = 0;
 
-  // Stage buttons
-  for (let i = 0; i < 10; i++) {
-    const col = i % DEV_COLS, row = Math.floor(i / DEV_COLS);
-    const bx = startX + col * (DEV_BTN_W + 16);
-    const by = startY + row * (DEV_BTN_H + 16);
-    if (e.offsetX >= bx && e.offsetX <= bx + DEV_BTN_W &&
-        e.offsetY >= by && e.offsetY <= by + DEV_BTN_H) {
-      audio.play('menuConfirm');
-      devJumpToStage(i + 1);
-      return;
+  if (base && base.totalRuns > 0) {
+    totalRuns = base.totalRuns;
+    totalScore = base.totalScore || 0;
+    totalKills = base.totalKills || 0;
+    completions = base.completions || 0;
+    for (let i = 0; i < 10; i++) {
+      stageReachCounts[i] = Math.max(0, Math.floor(Number(base.stageReachCounts?.[i]) || 0));
+      deathStageCounts[i] = Math.max(0, Math.floor(Number(base.deathStageCounts?.[i]) || 0));
     }
+  } else {
+    runs.forEach(run => {
+      totalRuns++;
+      totalScore += Math.max(0, Math.floor(Number(run.score) || 0));
+      totalKills += Math.max(0, Math.floor(Number(run.kills) || 0));
+      const reached = Math.max(1, Math.min(10, Math.floor(Number(run.stageReached) || 0)));
+      if (reached) stageReachCounts[reached - 1]++;
+      if (run.completed) completions++;
+      else if (reached) deathStageCounts[reached - 1]++;
+    });
   }
 
-  // Fast Stage toggle
-  const toggleY = startY + DEV_ROWS * (DEV_BTN_H + 16) + 20;
-  const toggleW = 220, toggleH = 40;
-  const toggleX = W / 2 - toggleW / 2;
-  if (e.offsetX >= toggleX && e.offsetX <= toggleX + toggleW &&
-      e.offsetY >= toggleY && e.offsetY <= toggleY + toggleH) {
+  const stageSamples = stageReachCounts.reduce((sum, count) => sum + count, 0);
+  const weightedStageTotal = stageReachCounts.reduce((sum, count, i) => sum + count * (i + 1), 0);
+  const avgStage = stageSamples > 0 ? weightedStageTotal / stageSamples : 0;
+  const mostReachedIndex = stageReachCounts.reduce((best, count, i) =>
+    count > stageReachCounts[best] ? i : best, 0);
+
+  return {
+    totalRuns,
+    totalScore,
+    totalKills,
+    completions,
+    avgStage,
+    mostReachedStage: stageReachCounts[mostReachedIndex] > 0 ? mostReachedIndex + 1 : 0,
+    stageReachCounts,
+    deathStageCounts,
+    lastRun: base?.lastRun || runs[runs.length - 1] || null,
+  };
+}
+
+function getDevMenuLayout() {
+  const W = canvas.width, H = canvas.height;
+  const layoutScale = Math.max(0.76, Math.min(1.04, Math.min(W / 1280, H / 720)));
+  const contentW = Math.min(W - 56 * layoutScale, 1180 * layoutScale);
+  const gap = 28 * layoutScale;
+  const leftW = Math.min(640 * layoutScale, contentW * 0.58);
+  const rightW = contentW - leftW - gap;
+  const leftX = (W - contentW) / 2;
+  const rightX = leftX + leftW + gap;
+  const topY = Math.max(92 * layoutScale, H * 0.15);
+  const stageGap = 13 * layoutScale;
+  const stageBtnW = (leftW - stageGap * (DEV_COLS - 1)) / DEV_COLS;
+  const stageBtnH = 54 * layoutScale;
+  const stageButtons = [];
+
+  for (let i = 0; i < 10; i++) {
+    const col = i % DEV_COLS;
+    const row = Math.floor(i / DEV_COLS);
+    stageButtons.push({
+      action: 'stage',
+      value: i + 1,
+      x: leftX + col * (stageBtnW + stageGap),
+      y: topY + 48 * layoutScale + row * (stageBtnH + stageGap),
+      width: stageBtnW,
+      height: stageBtnH,
+    });
+  }
+
+  const actionY = topY + 48 * layoutScale + DEV_ROWS * (stageBtnH + stageGap) + 22 * layoutScale;
+  const actionGap = 12 * layoutScale;
+  const actionBtnW = (leftW - actionGap * 2) / 3;
+  const actionBtnH = 42 * layoutScale;
+  const actionButtons = [
+    {
+      action: 'fast',
+      label: `FAST STAGE ${devFastStage ? 'ON' : 'OFF'}`,
+      color: devFastStage ? '#00ffcc' : '#6f7d91',
+      x: leftX,
+      y: actionY,
+      width: actionBtnW,
+      height: actionBtnH,
+    },
+    {
+      action: 'tutorial',
+      label: 'TUTORIAL',
+      color: '#aa55ff',
+      x: leftX + actionBtnW + actionGap,
+      y: actionY,
+      width: actionBtnW,
+      height: actionBtnH,
+    },
+    {
+      action: 'back',
+      label: 'TITLE',
+      color: '#b8c7d9',
+      x: leftX + (actionBtnW + actionGap) * 2,
+      y: actionY,
+      width: actionBtnW,
+      height: actionBtnH,
+    },
+  ];
+
+  const screenGap = 12 * layoutScale;
+  const screenBtnW = (rightW - screenGap) / 2;
+  const screenBtnH = 44 * layoutScale;
+  const screenTop = topY + 48 * layoutScale;
+  const screenButtons = [
+    { action: 'screen', value: 'death', label: 'GAME OVER', color: '#ff5544' },
+    { action: 'screen', value: 'win', label: 'MISSION COMPLETE', color: '#d8b4fe' },
+    { action: 'screen', value: 'leaderboard', label: 'LEADERBOARD', color: '#31afd4' },
+    { action: 'screen', value: 'pause', label: 'PAUSE MENU', color: '#a5b4fc' },
+  ].map((button, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    return {
+      ...button,
+      x: rightX + col * (screenBtnW + screenGap),
+      y: screenTop + row * (screenBtnH + screenGap),
+      width: screenBtnW,
+      height: screenBtnH,
+    };
+  });
+
+  return {
+    W,
+    H,
+    layoutScale,
+    leftX,
+    leftW,
+    rightX,
+    rightW,
+    topY,
+    stageButtons,
+    actionButtons,
+    screenButtons,
+    analyticsY: screenTop + 2 * (screenBtnH + screenGap) + 30 * layoutScale,
+  };
+}
+
+function _drawDevSectionTitle(label, x, y, color) {
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha = 0.78;
+  setGlow(color, 12);
+  ctx.fillStyle = color;
+  ctx.font = `bold 12px ${UI_DISPLAY_FONT}`;
+  ctx.fillText(label, x, y);
+  clearGlow();
+  ctx.restore();
+}
+
+function _drawDevActionBtn(button, label, color, active) {
+  const rgb = _hexToRgb(color);
+  ctx.save();
+  ctx.fillStyle = active ? `rgba(${rgb},0.16)` : `rgba(${rgb},0.08)`;
+  ctx.strokeStyle = active ? `rgba(${rgb},0.78)` : `rgba(${rgb},0.46)`;
+  ctx.lineWidth = active ? 1.7 : 1.2;
+  _roundRect(ctx, button.x, button.y, button.width, button.height, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.max(9, Math.round(10 * (button.height / 42)))}px ${UI_DISPLAY_FONT}`;
+  ctx.fillStyle = active ? '#ffffff' : color;
+  setGlow(color, active ? 12 : 6);
+  ctx.fillText(label, button.x + button.width / 2, button.y + button.height / 2 + 1);
+  clearGlow();
+  ctx.restore();
+}
+
+function _drawDevAnalyticsPanel(x, y, w, h, scale) {
+  const snapshot = getDevAnalyticsSnapshot();
+  const maxBar = Math.max(1, ...snapshot.stageReachCounts, ...snapshot.deathStageCounts);
+  const panelH = Math.max(260 * scale, h);
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha = 0.92;
+
+  const panelGrad = ctx.createLinearGradient(x, y, x + w, y + panelH);
+  panelGrad.addColorStop(0, 'rgba(49,175,212,0.07)');
+  panelGrad.addColorStop(1, 'rgba(170,85,255,0.05)');
+  ctx.fillStyle = panelGrad;
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  _roundRect(ctx, x, y, w, panelH, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  const pad = 18 * scale;
+  let cy = y + pad;
+  ctx.fillStyle = '#31afd4';
+  setGlow('#31afd4', 10);
+  ctx.font = `bold ${Math.round(12 * scale)}px ${UI_DISPLAY_FONT}`;
+  ctx.fillText('LOCAL RUN ANALYTICS', x + pad, cy);
+  clearGlow();
+
+  if (snapshot.totalRuns <= 0) {
+    ctx.globalAlpha = 0.62;
+    ctx.fillStyle = '#b8c7d9';
+    ctx.font = `${Math.round(12 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText('NO TRACKED RUNS YET', x + pad, cy + 38 * scale);
+    ctx.restore();
+    return;
+  }
+
+  cy += 36 * scale;
+  const clearRate = Math.round((snapshot.completions / Math.max(1, snapshot.totalRuns)) * 100);
+  const stats = [
+    ['RUNS', snapshot.totalRuns.toString()],
+    ['AVG STAGE', snapshot.avgStage > 0 ? snapshot.avgStage.toFixed(1) : '--'],
+    ['CLEARS', `${snapshot.completions} (${clearRate}%)`],
+    ['FURTHEST', `${furthestStage} / 10`],
+    ['AVG SCORE', Math.round(snapshot.totalScore / Math.max(1, snapshot.totalRuns)).toLocaleString()],
+    ['AVG KILLS', Math.round(snapshot.totalKills / Math.max(1, snapshot.totalRuns)).toLocaleString()],
+  ];
+
+  const colW = (w - pad * 2) / 2;
+  stats.forEach((stat, i) => {
+    const sx = x + pad + (i % 2) * colW;
+    const sy = cy + Math.floor(i / 2) * 34 * scale;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#8ea0b8';
+    ctx.font = `${Math.round(9 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText(stat[0], sx, sy);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${Math.round(15 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText(stat[1], sx, sy + 16 * scale);
+  });
+
+  cy += 122 * scale;
+  ctx.globalAlpha = 0.68;
+  ctx.fillStyle = '#d8b4fe';
+  ctx.font = `bold ${Math.round(10 * scale)}px ${UI_DISPLAY_FONT}`;
+  ctx.fillText('STAGE REACHED / DEATHS', x + pad, cy);
+  cy += 22 * scale;
+
+  const rowGap = 13 * scale;
+  const labelW = 28 * scale;
+  const countW = 30 * scale;
+  const barW = w - pad * 2 - labelW - countW;
+  for (let i = 0; i < 10; i++) {
+    const by = cy + i * rowGap;
+    const reached = snapshot.stageReachCounts[i];
+    const deaths = snapshot.deathStageCounts[i];
+    const reachedW = barW * (reached / maxBar);
+    const deathW = barW * (deaths / maxBar);
+
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = '#8ea0b8';
+    ctx.font = `${Math.round(9 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText(`S${i + 1}`, x + pad, by);
+
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + pad + labelW, by - 4 * scale, barW, 7 * scale);
+
+    if (reached > 0) {
+      ctx.globalAlpha = 0.78;
+      ctx.fillStyle = '#31afd4';
+      ctx.fillRect(x + pad + labelW, by - 4 * scale, reachedW, 7 * scale);
+    }
+    if (deaths > 0) {
+      ctx.globalAlpha = 0.86;
+      ctx.fillStyle = '#ff5544';
+      ctx.fillRect(x + pad + labelW, by - 1 * scale, deathW, 4 * scale);
+    }
+
+    ctx.globalAlpha = 0.62;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${reached}`, x + pad + labelW + barW + countW, by);
+    ctx.textAlign = 'left';
+  }
+
+  if (snapshot.lastRun) {
+    const lastY = Math.min(y + panelH - 20 * scale, cy + 10 * rowGap + 24 * scale);
+    const stageText = snapshot.lastRun.stageReached ? `S${snapshot.lastRun.stageReached}` : 'S?';
+    const resultText = snapshot.lastRun.completed ? 'CLEAR' : 'END';
+    ctx.globalAlpha = 0.58;
+    ctx.fillStyle = '#8ea0b8';
+    ctx.font = `${Math.round(9 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText('LAST RUN', x + pad, lastY);
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${Math.round(11 * scale)}px ${UI_DISPLAY_FONT}`;
+    ctx.fillText(`${resultText} ${stageText} / ${snapshot.lastRun.score || 0} PTS / ${snapshot.lastRun.kills || 0} K`, x + pad + 78 * scale, lastY);
+  }
+
+  ctx.restore();
+}
+
+function drawDevMenu() {
+  const layout = getDevMenuLayout();
+  const { W, H, layoutScale, leftX, rightX, rightW, topY } = layout;
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  setGlow('#ff3366', 16);
+  ctx.font = `bold ${Math.round(13 * layoutScale)}px ${UI_DISPLAY_FONT}`;
+  ctx.fillStyle = '#ff6688';
+  ctx.fillText('DEV CONTROL ROOM', W / 2, 42 * layoutScale);
+  clearGlow();
+
+  ctx.globalAlpha = 0.56;
+  ctx.font = `${Math.round(10 * layoutScale)}px ${UI_DISPLAY_FONT}`;
+  ctx.fillStyle = '#8ea0b8';
+  ctx.fillText('TYPE DEV OR DEVI ON TITLE - ESC RETURNS FROM THIS SCREEN', W / 2, 67 * layoutScale);
+  ctx.restore();
+
+  _drawDevSectionTitle('STAGE JUMP', leftX, topY, '#ff3366');
+  layout.stageButtons.forEach(button => {
+    _drawDevBtn(ctx, button.x, button.y, button.width, button.height, button.value);
+  });
+
+  layout.actionButtons.forEach(button => {
+    _drawDevActionBtn(button, button.label, button.color, button.action === 'fast' && devFastStage);
+  });
+
+  _drawDevSectionTitle('SCREEN PREVIEWS', rightX, topY, '#31afd4');
+  layout.screenButtons.forEach(button => {
+    _drawDevActionBtn(button, button.label, button.color, false);
+  });
+
+  _drawDevAnalyticsPanel(rightX, layout.analyticsY, rightW, H - layout.analyticsY - 32 * layoutScale, layoutScale);
+}
+
+function handleDevMenuClick(e) {
+  const layout = getDevMenuLayout();
+  const target = getClickTargetAt([
+    ...layout.stageButtons,
+    ...layout.actionButtons,
+    ...layout.screenButtons,
+  ], e.offsetX, e.offsetY);
+
+  if (!target) return;
+  if (target.action === 'stage') {
+    audio.play('menuConfirm');
+    devJumpToStage(target.value);
+    return;
+  }
+  if (target.action === 'fast') {
     devFastStage = !devFastStage;
     audio.play('menuSelect');
     return;
   }
-
-  // Tutorial button
-  const tutorialY = toggleY + toggleH + 16;
-  const tutorialW = 220, tutorialH = 40;
-  const tutorialX = W / 2 - tutorialW / 2;
-  if (e.offsetX >= tutorialX && e.offsetX <= tutorialX + tutorialW &&
-      e.offsetY >= tutorialY && e.offsetY <= tutorialY + tutorialH) {
+  if (target.action === 'tutorial') {
     audio.play('menuConfirm');
     startTutorialFromDevMenu();
     return;
   }
-
-  // Back button
-  const backY = tutorialY + tutorialH + 16;
-  const backW = 120, backH = 36;
-  const backX = W / 2 - backW / 2;
-  if (e.offsetX >= backX && e.offsetX <= backX + backW &&
-      e.offsetY >= backY && e.offsetY <= backY + backH) {
+  if (target.action === 'back') {
     gameState = 'title';
     titleIntroT = 0; titleIntroLive = true; titleSnapFired = false; titleSnapDecay = 0;
     audio.play('menuSelect');
+    audio.playMusic('title');
+    return;
+  }
+  if (target.action === 'screen') {
+    audio.play('menuConfirm');
+    devPreviewScreen(target.value);
   }
 }
 

@@ -63,6 +63,65 @@ function makeSharpShard(size) {
   return pts;
 }
 
+function makeBasicShardVisuals(size) {
+  const noseSkew = (Math.random() - 0.5) * size * 0.08;
+  const shoulderY = size * (0.16 + Math.random() * 0.04);
+  const tailLift = (Math.random() - 0.5) * size * 0.08;
+  return {
+    pts: [
+      { x: noseSkew,     y: -size * 1.08 },
+      { x: size * 0.72,  y: -shoulderY },
+      { x: size * 0.30,  y: size * 0.84 },
+      { x: -size * 0.20, y: size * 0.62 },
+      { x: -size * 0.84, y: size * (0.04 + tailLift / size) },
+      { x: -size * 0.46, y: -size * 0.70 },
+    ],
+    platePts: [
+      { x: noseSkew * 0.45, y: -size * 0.66 },
+      { x: size * 0.40,     y: -size * 0.16 },
+      { x: size * 0.18,     y: size * 0.46 },
+      { x: -size * 0.10,    y: size * 0.30 },
+      { x: -size * 0.48,    y: -size * 0.02 },
+      { x: -size * 0.26,    y: -size * 0.54 },
+    ],
+    accentPts: [
+      { x: noseSkew + size * 0.02, y: -size * 0.92 },
+      { x: size * 0.54,            y: -size * 0.20 },
+      { x: size * 0.28,            y: size * 0.02 },
+      { x: size * 0.02,            y: -size * 0.44 },
+    ],
+    coreLine: {
+      from: { x: noseSkew * 0.3 + size * 0.04, y: -size * 0.50 },
+      to:   { x: size * 0.16,                  y: size * 0.08 },
+    },
+    rearLine: {
+      from: { x: -size * 0.50, y: -size * 0.04 },
+      to:   { x: -size * 0.02, y: size * 0.18 },
+    }
+  };
+}
+
+function getBasicShardPalette(baseColor, isFlashing) {
+  if (isFlashing) {
+    return {
+      shell: '#eff5ff',
+      plate: '#ffffff',
+      outline: '#ffffff',
+      accent: '#ffffff',
+      core: '#ffffff',
+      rear: '#dce7ff',
+    };
+  }
+  return {
+    shell: _lerpColor('#080a11', baseColor, 0.12),
+    plate: _lerpColor('#141928', baseColor, 0.18),
+    outline: _lerpColor('#2c3448', baseColor, 0.36),
+    accent: _lerpColor(baseColor, '#f1fbff', 0.18),
+    core: _lerpColor(baseColor, '#f7fbff', 0.62),
+    rear: _lerpColor('#1b2130', baseColor, 0.32),
+  };
+}
+
 function getStageEnemyStats() {
   const s = stage.current;
   const cfg = STAGE_CONFIG[s - 1];
@@ -131,25 +190,39 @@ function spawnKamikaze() {
 
 function spawnDrift() {
   const stats = getStageEnemyStats();
-  const size = 20 + Math.random() * 8;
-  const speed = 100 + Math.random() * 100;
   const color = stats.color;
-  // Top-down: spawn from top edge, drift downward with slight horizontal jitter
+
+  // Mass coupling: t=0 light/small/fast, t=1 heavy/big/slow
+  const massT = Math.random();
+  const size = 16 + massT * 28; // 16..44
+  const spawnSpd = 160 - massT * 60;     // 160..100
+  const terminalSpd = 340 - massT * 80;  // 340..260
+  const accel = 95 - massT * 20;         // px/s^2; light snaps faster
+
+  // Spawn from top edge
   const x = PLAY_X + size + Math.random() * (PLAY_W - size * 2);
   const y = PLAY_Y - size;
-  const angle = Math.PI * 0.5 + (Math.random() - 0.5) * 0.6;
+
+  // Aim at player snapshot, ±15° scatter
+  const aimAngle = Math.atan2(drone.y - y, drone.x - x);
+  const SCATTER = (15 * Math.PI) / 180;
+  const launchAngle = aimAngle + (Math.random() * 2 - 1) * SCATTER;
+
+  const baseHp = 1 + (massT > 0.6 ? 1 : 0) + Math.floor(stage.current / 4);
+
   return {
     x,
     y,
     size,
     color,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
-    angle: Math.random() * Math.PI * 2,
-    spin: (Math.random() - 0.5) * 0.08,
-    pts: makeShardShape(size),
-    hp: 1 + Math.floor(stage.current / 4),
-    maxHp: 1 + Math.floor(stage.current / 4),
+    vx: Math.cos(launchAngle) * spawnSpd,
+    vy: Math.sin(launchAngle) * spawnSpd,
+    angle: launchAngle - Math.PI / 2,
+    spin: 0,
+    pts: makeRegularPolygon(size, 3, Math.PI / 2),
+    isTriangleShard: true,
+    hp: baseHp,
+    maxHp: baseHp,
     isElite: false,
     isKamikaze: false,
     isDrift: true,
@@ -157,6 +230,9 @@ function spawnDrift() {
     turnRate: 0,
     flashTimer: 0,
     hpBarTimer: 0,
+    driftLaunchAngle: launchAngle,
+    driftAccel: accel,
+    driftTerminalSpd: terminalSpd,
   };
 }
 
@@ -275,6 +351,7 @@ function stopBonusRingWave() {
 }
 
 function clearBonusRings() {
+  for (const s of shards.pool) if (s.isBonusRing) window.__TD_LEDGER__?.markRemoved(s, 'bonusRingCleared');
   shards.pool = shards.pool.filter(s => !s.isBonusRing);
 }
 
@@ -299,7 +376,10 @@ function getBonusRingContactPoint(ring) {
 
 function collectBonusRing(ring) {
   const idx = shards.pool.indexOf(ring);
-  if (idx >= 0) shards.pool.splice(idx, 1);
+  if (idx >= 0) {
+    window.__TD_LEDGER__?.markRemoved(ring, 'bonusRingCollected');
+    shards.pool.splice(idx, 1);
+  }
   const scoreAward = stage.onBonusRingCollect(ring);
   const contact = getBonusRingContactPoint(ring);
   audio.play('enemyHit');
@@ -376,43 +456,47 @@ function spawnShieldDrone() {
   };
 }
 
-function spawnJackpot() {
+function spawnJackpot(edge) {
   const jackpotMaxY = PLAY_Y + PLAY_H * 0.30;
-  const edges = ['top', 'left', 'right'];
-  const edge = edges[Math.floor(Math.random() * edges.length)];
+  if (!edge) {
+    const edges = ['top', 'left', 'right'];
+    edge = edges[Math.floor(Math.random() * edges.length)];
+  }
   let x, y, vx, vy;
   if (edge === 'top') {
     x = PLAY_X + 60 + Math.random() * (PLAY_W - 120);
     y = PLAY_Y - 20;
-    vx = (Math.random() - 0.5) * 180;
-    vy = 140 + Math.random() * 60;
+    vx = (Math.random() - 0.5) * 220;
+    vy = 180 + Math.random() * 70;
   } else if (edge === 'left') {
     x = PLAY_X - 20;
     y = PLAY_Y + 40 + Math.random() * Math.max(30, jackpotMaxY - PLAY_Y - 80);
-    vx = 95 + Math.random() * 40;
-    vy = (Math.random() - 0.5) * 80;
+    vx = 130 + Math.random() * 60;
+    vy = (Math.random() - 0.5) * 110;
   } else {
     x = PLAY_X + PLAY_W + 20;
     y = PLAY_Y + 40 + Math.random() * Math.max(30, jackpotMaxY - PLAY_Y - 80);
-    vx = -(95 + Math.random() * 40);
-    vy = (Math.random() - 0.5) * 80;
+    vx = -(130 + Math.random() * 60);
+    vy = (Math.random() - 0.5) * 110;
   }
   return {
     x, y,
-    size: 15.8,
-    color: '#ffd700',
+    size: 16,
+    color: '#ffd24a',
     vx, vy,
-    pts: makeJackpotShape(15.8),
+    pts: makeJackpotShape(16),
     isJackpot: true,
-    jackpotLife: 12500,
-    jackpotEscaping: false,
-    jackpotEscapeVx: 0,
-    jackpotEscapeVy: 0,
+    jackpotLife: 7000,
+    jackpotMaxLife: 7000,
     jackpotJitterTimer: 0,
+    jackpotCashingOut: false,
+    jackpotCashOutTimer: 0,
+    jackpotCashOutDuration: 600,
+    jackpotHeartbeatActive: false,
     angle: Math.random() * Math.PI * 2,
-    spin: 0.06,
-    hp: Math.round(4 + (stage.current - 1) * 0.7),
-    maxHp: Math.round(4 + (stage.current - 1) * 0.7),
+    spin: 0.05,
+    hp: 4,
+    maxHp: 4,
     isElite: false,
     isKamikaze: false,
     isMini: false,
@@ -549,15 +633,6 @@ function spawnFormationEliteEscort() {
   shards.pool.push(elite, left, right);
 }
 
-function spawnFormationShieldCluster() {
-  const cx = PLAY_X + PLAY_W * (0.3 + Math.random() * 0.4);
-  [cx - 55, cx - 18, cx + 18, cx + 55].forEach((x, i) => {
-    const vx = [-12, -4, 4, 12][i];
-    const s = spawnShardFromEdge('top', x, null, { vx, formationDelay: i * 120 });
-    shards.pool.push(s);
-  });
-}
-
 function spawnFormationCrossfire() {
   [0.22, 0.40].forEach(f => {
     shards.pool.push(spawnShardFromEdge('left', null, PLAY_Y + PLAY_H * f, {}));
@@ -664,14 +739,26 @@ const shards = {
   formationCooldown: 0,
   jackpotSpawned: false,
   jackpotSpawnAt: 0,
+  // Charge meter — fills with kill score, triggers jackpot when full.
+  jackpotMeter: 0,
+  jackpotMeterCap: 1800,
+  jackpotMeterTellShown: false,
+  jackpotPendingEdge: null,
+  jackpotPendingTimer: 0,
+  jackpotShimmerEdge: null,
+  jackpotShimmerTimer: 0,
+  jackpotShimmerDuration: 0,
+  jackpotNearMissCooldown: 0,
 
   _makeShard(x, y, stats, isElite, enableMechanics = false, edge = 'right') {
     const BASE_SIZES = [20, 26, 32];
-    const size = BASE_SIZES[Math.floor(Math.random() * BASE_SIZES.length)] * (isElite ? 1.4 : 1);
+    const size = BASE_SIZES[Math.floor(Math.random() * BASE_SIZES.length)] * (isElite ? ELITE_SIZE_MULT : 1);
     const color = isElite ? stats.eliteColor || stats.color : stats.color;
     const rawSpd = stats.speed + Math.random() * 80;
     const speed = player.lives === 1 ? rawSpd * 1.2 : rawSpd;
-    const baseHp = Math.max(1, stats.baseHp * (isElite ? 2 : 1) - (!isElite && stage.current === 7 ? 1 : 0));
+    const baseHp = isElite
+      ? ELITE_CORE_HP + Math.floor((stage.current - 1) * 0.7)
+      : Math.max(1, stats.baseHp - (stage.current === 7 ? 1 : 0));
     let vx, vy;
     if (edge === 'top') {
       // Downward, small horizontal drift
@@ -686,9 +773,11 @@ const shards = {
       x, y, size, color,
       vx,
       vy,
-      angle: Math.random() * Math.PI * 2,
-      spin: (Math.random() - 0.5) * 0.06,
-      pts: isElite ? makeRegularPolygon(size, 6) : makeShardShape(size),
+      // All shards face down (fixed orientation); elites are bigger red triangles
+      angle: 0,
+      spin: 0,
+      pts: makeRegularPolygon(size, 3, Math.PI / 2),
+      isTriangleShard: true,
       hp: baseHp,
       maxHp: baseHp,
       isElite,
@@ -708,7 +797,11 @@ const shards = {
   },
 
   _applyMechanics(shard, active) {
-    shard.shieldHp = active.has('shielded') ? (shard.isElite ? 3 : 2) : 0;
+    if (shard.isElite) {
+      shard.shieldHp = ELITE_SHIELD_HP;
+    } else {
+      shard.shieldHp = active.has('shielded') ? 2 : 0;
+    }
     shard.maxShieldHp = shard.shieldHp;
   },
 
@@ -720,7 +813,7 @@ const shards = {
     const dt = delta / 1000;
     const active = getActiveMechanics();
 
-    if (!stage.obstacleActive) {
+    if (!stage.obstacleActive && !stage.climaxActive) {
       this.spawnTimer += delta;
       if (this.spawnTimer >= this.spawnInterval && this.pool.length < this.maxEnemies) {
         this.spawnTimer = 0;
@@ -789,37 +882,38 @@ const shards = {
         }
       }
 
-      // Jackpot â€” once per stage, random window 5â€“25s in
+      // Jackpot — meter-driven trigger.
+      // The meter is filled in stage.onKill() with each kill's score value.
+      // At 80% cap we fire a 1.5s pre-spawn tell (edge shimmer + rising hum),
+      // then spawn the chip from the chosen edge.
       if (!this.jackpotSpawned) {
-        const elapsed = STAGE_DURATION - stage.timer;
-        if (elapsed >= this.jackpotSpawnAt) {
-          this.jackpotSpawned = true;
-          this.pool.push(spawnJackpot());
-          streakCallout.show('JACKPOT DETECTED', '#ffb020', 1400, 1.6, 'top');
+        // Pre-spawn tell crosses 0.8 of cap once per stage
+        if (!this.jackpotMeterTellShown && this.jackpotMeter >= this.jackpotMeterCap * 0.8) {
+          this.jackpotMeterTellShown = true;
+          const edges = ['top', 'left', 'right'];
+          const edge = edges[Math.floor(Math.random() * edges.length)];
+          this.jackpotPendingEdge = edge;
+          this.jackpotPendingTimer = 1500;
+          this.jackpotShimmerEdge = edge;
+          this.jackpotShimmerTimer = 1500;
+          this.jackpotShimmerDuration = 1500;
+          audio.play('jackpotTell');
         }
-      }
-    }
-
-    // Stage 10 scripted climax â€” fires at fixed timestamps, bypasses formationCooldown
-    if (stage.current === 10) {
-      const elapsed = STAGE_DURATION - stage.timer;
-      for (const entry of STAGE_10_CLIMAX) {
-        if (elapsed >= entry.t && elapsed < entry.t + delta) {
-          if (entry.type === 'callout')
-            streakCallout.show(entry.text, entry.color, entry.duration, entry.scale, entry.zone);
-          else if (entry.type === 'shake') {
-            stage.shakeTimer = entry.duration;
-            stage.shakeIntensity = entry.intensity;
+        // After tell, count down and fire spawn (or fire immediately if meter races to cap before tell completes)
+        if (this.jackpotPendingEdge !== null) {
+          this.jackpotPendingTimer -= delta;
+          if (this.jackpotPendingTimer <= 0 || this.jackpotMeter >= this.jackpotMeterCap) {
+            this.jackpotSpawned = true;
+            this.pool.push(spawnJackpot(this.jackpotPendingEdge));
+            this.jackpotPendingEdge = null;
+            this.jackpotPendingTimer = 0;
+            streakCallout.show('JACKPOT INCOMING', '#ffd24a', 1400, 1.6, 'top');
+            audio.play('jackpotSpawn');
           }
-          else if (entry.type === 'kamikazePack')  spawnFormationKamikazePack();
-          else if (entry.type === 'swarmBurst')    spawnFormationSwarmBurst();
-          else if (entry.type === 'eliteEscort')   spawnFormationEliteEscort();
-          else if (entry.type === 'columnTrain')   spawnFormationColumnTrain();
-          else if (entry.type === 'crossfire')     spawnFormationCrossfire();
-          else if (entry.type === 'shieldCluster') spawnFormationShieldCluster();
-          else if (entry.type === 'pincer')        spawnFormationPincer();
         }
       }
+      if (this.jackpotShimmerTimer > 0) this.jackpotShimmerTimer -= delta;
+      if (this.jackpotNearMissCooldown > 0) this.jackpotNearMissCooldown -= delta;
     }
 
     turretIndicators.update(delta);
@@ -834,7 +928,9 @@ const shards = {
         if (s.flashTimer > 0) s.flashTimer -= delta;
         if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
         if (s.lifetime !== undefined) s.lifetime -= delta;
-        return s.y < PLAY_Y + PLAY_H + s.size + 40 && (s.lifetime === undefined || s.lifetime > 0);
+        const alive = s.y < PLAY_Y + PLAY_H + s.size + 40 && (s.lifetime === undefined || s.lifetime > 0);
+        if (!alive) window.__TD_LEDGER__?.markRemoved(s, s.lifetime !== undefined && s.lifetime <= 0 ? 'lifetimeExpired' : 'offScreen');
+        return alive;
       }
 
       if (s.isGatePiece) {
@@ -842,7 +938,9 @@ const shards = {
         if (s.flashTimer > 0) s.flashTimer -= delta;
         if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
         if (s.lifetime !== undefined) s.lifetime -= delta;
-        return s.y < PLAY_Y + PLAY_H + 80 && (s.lifetime === undefined || s.lifetime > 0);
+        const alive = s.y < PLAY_Y + PLAY_H + 80 && (s.lifetime === undefined || s.lifetime > 0);
+        if (!alive) window.__TD_LEDGER__?.markRemoved(s, s.lifetime !== undefined && s.lifetime <= 0 ? 'lifetimeExpired' : 'offScreen');
+        return alive;
       }
 
       // Formation delay â€” freeze shard in place until delay expires
@@ -856,7 +954,9 @@ const shards = {
         if (s.flashTimer > 0) s.flashTimer -= delta;
         if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
         s.lifetime -= delta;
-        return s.y < PLAY_Y + PLAY_H + 80 && s.x > PLAY_X - 120 && s.x < PLAY_X + PLAY_W + 120 && s.lifetime > 0;
+        const alive = s.y < PLAY_Y + PLAY_H + 80 && s.x > PLAY_X - 120 && s.x < PLAY_X + PLAY_W + 120 && s.lifetime > 0;
+        if (!alive) window.__TD_LEDGER__?.markRemoved(s, s.lifetime <= 0 ? 'lifetimeExpired' : 'offScreen');
+        return alive;
       }
 
       // Shield drone update â€” before all other logic
@@ -951,7 +1051,7 @@ const shards = {
             }
           } else if (s.turretFireTimer <= 0) {
             s.turretCharging = true;
-            s.turretChargeTimer = 300;
+            s.turretChargeTimer = 500;
             s.turretFireTimer = stage.current >= 8 ? 900 : stage.current >= 5 ? 1200 : 1500;
           }
         }
@@ -960,88 +1060,80 @@ const shards = {
         return true;
       }
 
-      // Jackpot update
+      // Jackpot update — pinball movement, cash-out on timeout (no flee)
       if (s.isJackpot) {
         const jackpotMaxY = PLAY_Y + PLAY_H * 0.30;
-        s.jackpotLife -= delta;
         s.angle += s.spin;
-        s.jackpotJitterTimer -= delta;
         if (s.flashTimer > 0) s.flashTimer -= delta;
 
-        if (s.jackpotLife <= 2400 && !s.jackpotEscaping) {
-          s.jackpotEscaping = true;
-          const toLeft   = s.x - PLAY_X;
-          const toRight  = (PLAY_X + PLAY_W) - s.x;
-          const toTop    = s.y - PLAY_Y;
-          const minD = Math.min(toLeft, toRight, toTop);
-          const escSpd = 620;
-          if      (minD === toTop)    { s.jackpotEscapeVx = 0;       s.jackpotEscapeVy = -escSpd; }
-          else if (minD === toLeft)   { s.jackpotEscapeVx = -escSpd; s.jackpotEscapeVy = 0; }
-          else                        { s.jackpotEscapeVx = escSpd;  s.jackpotEscapeVy = 0; }
-          streakCallout.show('JACKPOT ESCAPED', '#ff8800', 1100, 1.4, 'top');
+        // Cash-out animation: freeze in place, shrink + fade, then remove.
+        if (s.jackpotCashingOut) {
+          s.jackpotCashOutTimer -= delta;
+          // Slight downward drift (chip falling through floor)
+          s.y += 18 * dt;
+          if (s.jackpotCashOutTimer <= 0) {
+            // Consume one "pull" — same as kill, so a future spawn can still happen this stage.
+            shards.jackpotMeter = Math.max(0, shards.jackpotMeter - shards.jackpotMeterCap);
+            shards.jackpotSpawned = false;
+            shards.jackpotMeterTellShown = false;
+            shards.jackpotPendingEdge = null;
+            shards.jackpotPendingTimer = 0;
+            window.__TD_LEDGER__?.markRemoved(s, 'jackpotCashOut');
+            return false;
+          }
+          return true;
         }
 
-        if (s.jackpotEscaping) {
-          s.vx = s.jackpotEscapeVx;
-          s.vy = s.jackpotEscapeVy;
-        } else {
-          // Hide: steer toward nearest enemy cluster
-          const others = shards.pool.filter(e => !e.isJackpot && !e.isGatePiece && !e.isBonusRing);
-          if (others.length > 0) {
-            const sorted = others.slice().sort((a, b) =>
-              Math.hypot(a.x - s.x, a.y - s.y) - Math.hypot(b.x - s.x, b.y - s.y)
-            );
-            const cluster = sorted.slice(0, Math.min(5, sorted.length));
-            const cx = cluster.reduce((sum, e) => sum + e.x, 0) / cluster.length;
-            const cy = Math.min(
-              jackpotMaxY - 26,
-              cluster.reduce((sum, e) => sum + e.y, 0) / cluster.length
-            );
-            const ddx = cx - s.x, ddy = cy - s.y;
-            const dist = Math.hypot(ddx, ddy);
-            if (dist > 40) {
-              s.vx += (ddx / dist) * 150 * dt;
-              s.vy += (ddy / dist) * 150 * dt;
-            }
-          } else {
-            // No enemies â€” drift toward upper middle
-            const ddx = (PLAY_X + PLAY_W * 0.5) - s.x;
-            const ddy = (PLAY_Y + PLAY_H * 0.2) - s.y;
-            const dist = Math.hypot(ddx, ddy);
-            if (dist > 30) {
-              s.vx += (ddx / dist) * 95 * dt;
-              s.vy += (ddy / dist) * 95 * dt;
-            }
-          }
+        s.jackpotLife -= delta;
+        s.jackpotJitterTimer -= delta;
 
-          // Random direction jitter
-          if (s.jackpotJitterTimer <= 0) {
-            s.jackpotJitterTimer = 320 + Math.random() * 420;
-            s.vx += (Math.random() - 0.5) * 150;
-            s.vy += (Math.random() - 0.5) * 150;
-          }
-
-          // Speed cap
-          const spd = Math.hypot(s.vx, s.vy);
-          if (spd > 240) { s.vx = (s.vx / spd) * 240; s.vy = (s.vy / spd) * 240; }
-
-          // Bounce off arena walls
-          if (s.x < PLAY_X + 18) s.vx = Math.abs(s.vx) + 24;
-          if (s.x > PLAY_X + PLAY_W - 18) s.vx = -(Math.abs(s.vx) + 24);
-          if (s.y < PLAY_Y + 18) s.vy = Math.abs(s.vy) + 24;
-          if (s.y > jackpotMaxY) {
-            s.y = jackpotMaxY;
-            s.vy = -Math.max(Math.abs(s.vy) + 40, 130);
-          }
+        // Last 2 seconds: heartbeat audio (one-shot trigger)
+        if (s.jackpotLife <= 2000 && !s.jackpotHeartbeatActive) {
+          s.jackpotHeartbeatActive = true;
+          audio.startLoop('jackpotHeartbeatLoop');
         }
+
+        // Timeout: cash out in place
+        if (s.jackpotLife <= 0) {
+          s.jackpotCashingOut = true;
+          s.jackpotCashOutTimer = s.jackpotCashOutDuration;
+          s.vx = 0;
+          s.vy = 0;
+          if (s.jackpotHeartbeatActive) {
+            audio.stopLoop('jackpotHeartbeatLoop');
+            s.jackpotHeartbeatActive = false;
+          }
+          audio.play('jackpotCashOut');
+          streakCallout.show('JACKPOT MISSED', '#ff8800', 1100, 1.4, 'top');
+          return true;
+        }
+
+        // Random direction jitter — pinball energy
+        if (s.jackpotJitterTimer <= 0) {
+          s.jackpotJitterTimer = 320 + Math.random() * 420;
+          s.vx += (Math.random() - 0.5) * 150;
+          s.vy += (Math.random() - 0.5) * 150;
+        }
+
+        // Speed cap — scales with stage for higher difficulty later
+        const speedCap = 260 + (stage.current - 1) * 18;
+        const spd = Math.hypot(s.vx, s.vy);
+        if (spd > speedCap) { s.vx = (s.vx / spd) * speedCap; s.vy = (s.vy / spd) * speedCap; }
+
+        // Bounce off arena walls — amplified for kinetic pinball feel
+        let bounced = false;
+        if (s.x < PLAY_X + 18) { s.vx = Math.abs(s.vx) + 40; bounced = true; }
+        if (s.x > PLAY_X + PLAY_W - 18) { s.vx = -(Math.abs(s.vx) + 40); bounced = true; }
+        if (s.y < PLAY_Y + 18) { s.vy = Math.abs(s.vy) + 40; bounced = true; }
+        if (s.y > jackpotMaxY) {
+          s.y = jackpotMaxY;
+          s.vy = -Math.max(Math.abs(s.vy) + 40, 150);
+          bounced = true;
+        }
+        if (bounced) audio.play('jackpotBounce');
 
         s.x += s.vx * dt;
         s.y += s.vy * dt;
-
-        if (s.jackpotEscaping) {
-          return s.x > PLAY_X - 150 && s.x < PLAY_X + PLAY_W + 150 &&
-                 s.y > PLAY_Y - 150 && s.y < PLAY_Y + PLAY_H + 150;
-        }
         return true;
       }
 
@@ -1087,7 +1179,29 @@ const shards = {
         if (s.flashTimer > 0) s.flashTimer -= delta;
         if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
         s.lifetime -= delta;
-        return s.y < PLAY_Y + PLAY_H + 80 && s.lifetime > 0;
+        const alive = s.y < PLAY_Y + PLAY_H + 80 && s.lifetime > 0;
+        if (!alive) window.__TD_LEDGER__?.markRemoved(s, s.lifetime <= 0 ? 'lifetimeExpired' : 'offScreen');
+        return alive;
+      }
+
+      // Drift: accelerate along locked launch vector, align nose to velocity
+      if (s.isDrift) {
+        const curSpd = Math.hypot(s.vx, s.vy);
+        if (curSpd < s.driftTerminalSpd) {
+          const newSpd = Math.min(s.driftTerminalSpd, curSpd + s.driftAccel * dt);
+          s.vx = Math.cos(s.driftLaunchAngle) * newSpd;
+          s.vy = Math.sin(s.driftLaunchAngle) * newSpd;
+        }
+        s.angle = Math.atan2(s.vy, s.vx) - Math.PI / 2;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        if (s.flashTimer > 0) s.flashTimer -= delta;
+        if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
+        const alive = s.y < PLAY_Y + PLAY_H + 80
+          && s.x > PLAY_X - 120
+          && s.x < PLAY_X + PLAY_W + 120;
+        if (!alive) window.__TD_LEDGER__?.markRemoved(s, 'offScreen');
+        return alive;
       }
 
       if (!s.isKamikaze && s.y < PLAY_Y + PLAY_H * 0.5) {
@@ -1112,7 +1226,9 @@ const shards = {
       if (s.hpBarTimer > 0) s.hpBarTimer -= delta;
       if (s.lifetime !== undefined) s.lifetime -= delta;
 
-      return s.y < PLAY_Y + PLAY_H + 80 && s.x > PLAY_X - 120 && s.x < PLAY_X + PLAY_W + 120 && (s.lifetime === undefined || s.lifetime > 0);
+      const alive = s.y < PLAY_Y + PLAY_H + 80 && s.x > PLAY_X - 120 && s.x < PLAY_X + PLAY_W + 120 && (s.lifetime === undefined || s.lifetime > 0);
+      if (!alive) window.__TD_LEDGER__?.markRemoved(s, s.lifetime !== undefined && s.lifetime <= 0 ? 'lifetimeExpired' : 'offScreen');
+      return alive;
     });
 
     // Destroy Pixi gfx for entities removed from pool this frame
@@ -1242,49 +1358,49 @@ const shards = {
       ctx.rotate(facingAngle);
       const drawColor = s.flashTimer > 0 ? '#ffffff' : s.color;
       const flicker = isKamikaze ? 0.75 + 0.25 * Math.sin(getNow() * 0.025 + s.x * 0.01) : 1;
+      const isBasicShard = !!s.isTriangleShard;
 
-      // Shield drone: counter-rotating diamond
+      // Shield drone: nested diamonds (outer + inner) with glow stack
       if (s.isShieldDrone) {
-        const r = s.size;
+        const r = s.size * 1.8;
+        const outerPts = makeRegularPolygon(r, 4);
+        const innerPts = makeRegularPolygon(r * 0.5, 4);
+        const sdPulse = 0.85 + 0.15 * Math.sin(getNow() * 0.005);
+        ctx.lineJoin = 'miter';
+        ctx.miterLimit = 10;
 
-        // Wide bloom
-        ctx.globalAlpha = 0.12;
-        setGlow(drawColor, 24);
-        ctx.fillStyle = drawColor;
-        ctx.beginPath();
-        ctx.moveTo(0, -r * 1.6); ctx.lineTo(r * 1.6, 0);
-        ctx.lineTo(0, r * 1.6);  ctx.lineTo(-r * 1.6, 0);
-        ctx.closePath(); ctx.fill();
+        // Outer halo bloom
+        tracePolygonPath(outerPts, 1.35);
+        ctx.fillStyle = drawColor; ctx.globalAlpha = 0.10 * sdPulse;
+        setGlow(drawColor, 32); ctx.fill();
 
-        // Mid corona stroke
-        ctx.globalAlpha = 0.6;
-        setGlow(drawColor, 10);
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(0, -r); ctx.lineTo(r, 0);
-        ctx.lineTo(0, r);  ctx.lineTo(-r, 0);
-        ctx.closePath(); ctx.stroke();
+        // Dark interior
+        tracePolygonPath(outerPts);
+        ctx.fillStyle = '#000'; ctx.globalAlpha = 0.6; clearGlow(); ctx.fill();
 
-        // Counter-rotating outer ring
-        ctx.save();
-        ctx.rotate(s.ringAngle);
-        ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, -r * 1.5); ctx.lineTo(r * 1.5, 0);
-        ctx.lineTo(0, r * 1.5);  ctx.lineTo(-r * 1.5, 0);
-        ctx.closePath(); ctx.stroke();
-        ctx.restore();
+        // Outer diamond — wide corona / mid / white core
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 0.45 * sdPulse;
+        setGlow(drawColor, 22); ctx.strokeStyle = drawColor;
+        ctx.lineWidth = 4.2; ctx.stroke();
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 0.92; setGlow(drawColor, 10);
+        ctx.lineWidth = 2.0; ctx.stroke();
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 1; clearGlow();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.9; ctx.stroke();
 
-        // Hard white core dot
-        ctx.globalAlpha = 1;
-        setGlow('#ffffff', 5);
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, 0, 2, 0, Math.PI * 2);
-        ctx.fill();
+        // Inner diamond — wide corona / mid / white core
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 0.55 * sdPulse;
+        setGlow(drawColor, 16); ctx.strokeStyle = drawColor;
+        ctx.lineWidth = 2.6; ctx.stroke();
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 0.96; setGlow(drawColor, 6);
+        ctx.lineWidth = 1.3; ctx.stroke();
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 1; clearGlow();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.7; ctx.stroke();
 
         clearGlow();
         ctx.restore();
@@ -1328,36 +1444,53 @@ const shards = {
         return;
       }
 
-      // Turret: octagon with center dot
+      // Turret: nested hexagons (outer + inner) with glow stack + center white square
       if (s.isTurret) {
-        const turretPts = makeRegularPolygon(s.size * 1.9, 8, Math.PI / 8);
+        const r = s.size * 1.9;
+        const outerPts = makeRegularPolygon(r, 6);
+        const innerPts = makeRegularPolygon(r * 0.5, 6);
+        const tPulse = 0.85 + 0.15 * Math.sin(getNow() * 0.005);
+        ctx.lineJoin = 'miter';
+        ctx.miterLimit = 10;
 
-        // Wide bloom pass
-        ctx.globalAlpha = 0.15;
-        setGlow(drawColor, 28);
-        ctx.fillStyle = drawColor;
-        tracePolygonPath(turretPts, 1.08);
-        ctx.fill();
+        // Outer halo bloom
+        tracePolygonPath(outerPts, 1.35);
+        ctx.fillStyle = drawColor; ctx.globalAlpha = 0.10 * tPulse;
+        setGlow(drawColor, 32); ctx.fill();
 
-        // Mid corona pass
-        ctx.globalAlpha = 0.55;
-        setGlow(drawColor, 12);
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth = 2;
-        tracePolygonPath(turretPts);
-        ctx.stroke();
+        // Dark interior
+        tracePolygonPath(outerPts);
+        ctx.fillStyle = '#000'; ctx.globalAlpha = 0.65; clearGlow(); ctx.fill();
 
-        // Hard white edge and center dot
-        ctx.globalAlpha = 1;
-        setGlow('#ffffff', 5);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 0.7;
-        tracePolygonPath(turretPts);
-        ctx.stroke();
+        // Outer hex — wide corona / mid / white core
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 0.45 * tPulse;
+        setGlow(drawColor, 22); ctx.strokeStyle = drawColor;
+        ctx.lineWidth = 4.2; ctx.stroke();
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 0.92; setGlow(drawColor, 10);
+        ctx.lineWidth = 2.0; ctx.stroke();
+        tracePolygonPath(outerPts);
+        ctx.globalAlpha = 1; clearGlow();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.9; ctx.stroke();
+
+        // Inner hex — wide corona / mid / white core
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 0.55 * tPulse;
+        setGlow(drawColor, 16); ctx.strokeStyle = drawColor;
+        ctx.lineWidth = 2.6; ctx.stroke();
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 0.96; setGlow(drawColor, 6);
+        ctx.lineWidth = 1.3; ctx.stroke();
+        tracePolygonPath(innerPts);
+        ctx.globalAlpha = 1; clearGlow();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.7; ctx.stroke();
+
+        // Center white square
+        ctx.globalAlpha = 1; setGlow('#ffffff', 6);
         ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-1.5, -1.5, 3, 3);
+        clearGlow();
 
         // Targeting ring when locked
         if (s.turretLocked) {
@@ -1370,15 +1503,23 @@ const shards = {
           ctx.stroke();
         }
 
-        // Charging: pulsing white center dot
+        // Charging: pulsing white center dot + expanding telegraph ring
         if (s.turretCharging) {
-          const chargeAlpha = 1 - (s.turretChargeTimer / 300);
+          const chargeAlpha = 1 - (s.turretChargeTimer / 500);
           ctx.globalAlpha = chargeAlpha;
           setGlow('#ffffff', 16);
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(0, 0, 4, 0, Math.PI * 2);
           ctx.fill();
+          // Expanding ring telegraph
+          ctx.globalAlpha = chargeAlpha * 0.85;
+          setGlow('#ffffff', 12);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.arc(0, 0, Math.max(0.1, s.size * 2.5 * chargeAlpha), 0, Math.PI * 2);
+          ctx.stroke();
         }
 
         // Shield drone protection shell on turret
@@ -1425,8 +1566,8 @@ const shards = {
         const r = s.size;
         const now = getNow();
         const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-        const amber = s.flashTimer > 0 ? '#ffffff' : '#ffb020';
-        const amberBrt = s.flashTimer > 0 ? '#ffffff' : '#ffe090';
+        const amber = s.flashTimer > 0 ? '#ffffff' : '#ffff00';
+        const amberBrt = s.flashTimer > 0 ? '#ffffff' : '#ffff88';
         const chipR = r * 1.42;
         const faceR = r * 1.02;
         const coreR = r * 0.58;
@@ -1462,22 +1603,22 @@ const shards = {
         ctx.arc(0, 0, chipR * 0.84, 0, Math.PI * 2);
         ctx.stroke();
 
-        ctx.globalAlpha = 0.92;
-        ctx.fillStyle = '#fff3cc';
-        for (let i = 0; i < 6; i++) {
-          const a = s.angle + i * (Math.PI / 3);
-          const c = Math.cos(a);
-          const si = Math.sin(a);
-          const px = -si;
-          const py = c;
+        const wispCount = 8;
+        for (let i = 0; i < wispCount; i++) {
+          const a = s.angle * 0.4 + i * (Math.PI * 2 / wispCount);
+          const wispPulse = 0.5 + 0.5 * Math.sin(now * 0.004 + i * 1.7);
+          const wispR = chipR * (1.55 + wispPulse * 0.18);
+          const wx = Math.cos(a) * wispR;
+          const wy = Math.sin(a) * wispR;
+          const wispSize = chipR * (0.08 + wispPulse * 0.04);
+          ctx.globalAlpha = 0.18 + wispPulse * 0.22;
+          setGlow('#ffd15c', 12);
+          ctx.fillStyle = '#ffd15c';
           ctx.beginPath();
-          ctx.moveTo(c * insetOuterR + px * chipR * 0.14, si * insetOuterR + py * chipR * 0.14);
-          ctx.lineTo(c * insetOuterR - px * chipR * 0.14, si * insetOuterR - py * chipR * 0.14);
-          ctx.lineTo(c * insetInnerR - px * chipR * 0.10, si * insetInnerR - py * chipR * 0.10);
-          ctx.lineTo(c * insetInnerR + px * chipR * 0.10, si * insetInnerR + py * chipR * 0.10);
-          ctx.closePath();
+          ctx.arc(wx, wy, wispSize, 0, Math.PI * 2);
           ctx.fill();
         }
+        clearGlow();
 
         ctx.globalAlpha = 0.96;
         setGlow('#ffd66b', 10);
@@ -1522,9 +1663,9 @@ const shards = {
             const sx = barX + i * (segW + segGap);
             const filled = i < s.hp;
             ctx.globalAlpha = filled ? 0.95 : 0.25;
-            ctx.shadowColor = filled ? '#ffb020' : 'transparent';
+            ctx.shadowColor = filled ? '#ffff00' : 'transparent';
             ctx.shadowBlur = filled ? 6 : 0;
-            ctx.fillStyle = filled ? '#ffb020' : '#554400';
+            ctx.fillStyle = filled ? '#ffff00' : '#554400';
             ctx.fillRect(sx, barY, segW, segH);
           }
           ctx.shadowBlur = 0;
@@ -1537,8 +1678,8 @@ const shards = {
         const r = s.size;
         const now = getNow();
         const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-        const amber   = s.flashTimer > 0 ? '#ffffff' : '#ffb020';
-        const amberBrt = s.flashTimer > 0 ? '#ffffff' : '#ffe090';
+        const amber   = s.flashTimer > 0 ? '#ffffff' : '#ffff00';
+        const amberBrt = s.flashTimer > 0 ? '#ffffff' : '#ffff88';
         const bodyAngle  = s.angle;
 
         // Star body â€” filled subtle amber
@@ -1596,9 +1737,9 @@ const shards = {
             const sx = barX + i * (segW + segGap);
             const filled = i < s.hp;
             ctx.globalAlpha = filled ? 0.95 : 0.25;
-            ctx.shadowColor = filled ? '#ffb020' : 'transparent';
+            ctx.shadowColor = filled ? '#ffff00' : 'transparent';
             ctx.shadowBlur = filled ? 6 : 0;
-            ctx.fillStyle = filled ? '#ffb020' : '#554400';
+            ctx.fillStyle = filled ? '#ffff00' : '#554400';
             ctx.fillRect(sx, barY, segW, segH);
           }
           ctx.shadowBlur = 0;
@@ -1618,7 +1759,7 @@ const shards = {
           ctx.strokeStyle = tGrad;
           ctx.lineWidth = s.jackpotEscaping ? 4.5 : 3;
           ctx.lineCap = 'round';
-          ctx.shadowColor = '#ffb020';
+          ctx.shadowColor = '#ffff00';
           ctx.shadowBlur = s.jackpotEscaping ? 22 : 13;
           ctx.globalAlpha = 1;
           ctx.beginPath();
@@ -1633,6 +1774,73 @@ const shards = {
       }
 
       {
+        if (isBasicShard) {
+          const pulse = 0.85 + 0.15 * Math.sin(getNow() * 0.005 + s.x * 0.012);
+          const baseColor = s.flashTimer > 0 ? '#ffffff' : s.color;
+          const innerPts = s.pts.map(p => ({ x: p.x * 0.5, y: p.y * 0.5 }));
+          ctx.lineJoin = 'miter';
+          ctx.miterLimit = 10;
+
+          // Outer halo bloom
+          tracePolygonPath(s.pts, 1.35);
+          ctx.fillStyle = baseColor;
+          ctx.globalAlpha = 0.08 * pulse;
+          setGlow(baseColor, 32);
+          ctx.fill();
+
+          // Dark interior so inner triangle reads against the body
+          tracePolygonPath(s.pts);
+          ctx.fillStyle = '#000000';
+          ctx.globalAlpha = 0.55;
+          clearGlow();
+          ctx.fill();
+
+          // Outer triangle — wide corona stroke
+          tracePolygonPath(s.pts);
+          ctx.globalAlpha = 0.40 * pulse;
+          setGlow(baseColor, 22);
+          ctx.strokeStyle = baseColor;
+          ctx.lineWidth = 4.2;
+          ctx.stroke();
+
+          // Outer triangle — mid stroke
+          tracePolygonPath(s.pts);
+          ctx.globalAlpha = 0.92;
+          setGlow(baseColor, 10);
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          // Outer triangle — crisp white core
+          tracePolygonPath(s.pts);
+          ctx.globalAlpha = 1.0;
+          clearGlow();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 0.9;
+          ctx.stroke();
+
+          // Inner triangle — wide corona
+          tracePolygonPath(innerPts);
+          ctx.globalAlpha = 0.55 * pulse;
+          setGlow(baseColor, 16);
+          ctx.strokeStyle = baseColor;
+          ctx.lineWidth = 2.6;
+          ctx.stroke();
+
+          // Inner triangle — mid stroke
+          tracePolygonPath(innerPts);
+          ctx.globalAlpha = 0.96;
+          setGlow(baseColor, 6);
+          ctx.lineWidth = 1.3;
+          ctx.stroke();
+
+          // Inner triangle — crisp white core
+          tracePolygonPath(innerPts);
+          ctx.globalAlpha = 1.0;
+          clearGlow();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
+        } else {
         if (isKamikaze) {
           tracePolygonPath(s.pts, 1.35);
           ctx.fillStyle = '#ff2200';
@@ -1677,11 +1885,12 @@ const shards = {
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
         ctx.lineWidth = s.isElite ? 1.2 : 0.9;
         ctx.stroke();
+        }
       }
 
       ctx.globalAlpha = 1;
 
-      {
+      if (!isBasicShard) {
         const crack = s.pts;
         setGlow(drawColor, isKamikaze ? 12 : 10);
         ctx.strokeStyle = drawColor;
@@ -1693,39 +1902,16 @@ const shards = {
         ctx.stroke();
       }
 
-      if (s.isElite) {
-        const pulse = Math.sin(getNow() * 0.008) * 0.5 + 0.5;
-        const eliteRingRadius = Math.max(0.1, s.size * (1.3 + pulse * 0.15));
-        ctx.globalAlpha = 0.3 + pulse * 0.45;
-        setGlow(s.color, 38);
-        ctx.strokeStyle = s.color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(0, 0, eliteRingRadius, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Inner counter-rotating hexagon detail
-        const innerPts = makeRegularPolygon(s.size * 0.48, 6, -s.angle * 2);
-        ctx.beginPath();
-        for (let i = 0; i < innerPts.length; i++) {
-          const p = innerPts[i];
-          i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
-        }
-        ctx.closePath();
-        ctx.globalAlpha = 0.30 + pulse * 0.20;
-        setGlow(s.color, 10);
-        ctx.strokeStyle = s.color;
-        ctx.lineWidth = 1.0;
-        ctx.stroke();
-      }
-
       if (s.maxShieldHp > 0 && s.shieldHp > 0) {
         const shieldPulse = 0.65 + 0.35 * Math.sin(getNow() * 0.01 + s.x * 0.01);
-        const shieldRadius = Math.max(0.1, s.size * 1.05);
-        ctx.globalAlpha = 0.35 + shieldPulse * 0.25;
-        setGlow('#ffffff', 16);
-        ctx.strokeStyle = '#9be7ff';
-        ctx.lineWidth = 2;
+        const shieldRadius = Math.max(0.1, s.size * (s.isElite ? 1.35 : 1.05));
+        const shieldFrac = s.shieldHp / s.maxShieldHp;
+        const shieldColor = s.isElite ? '#ff1133' : '#9be7ff';
+        const glowColor = s.isElite ? '#ff1133' : '#ffffff';
+        ctx.globalAlpha = (s.isElite ? 0.45 : 0.35) + shieldPulse * 0.3 * shieldFrac;
+        setGlow(glowColor, s.isElite ? 28 : 16);
+        ctx.strokeStyle = shieldColor;
+        ctx.lineWidth = s.isElite ? 2.4 : 2;
         ctx.beginPath();
         ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
         ctx.stroke();
@@ -1772,14 +1958,25 @@ const shards = {
         if (s.isCharger && s.chargerState === 'telegraph') {
           const telegraphProgress = 1 - s.chargerTelegraphTimer / 350;
           const ringR = s.size * (2.5 - telegraphProgress * 1.5);
+          const pulse = 0.7 + 0.3 * Math.sin(getNow() * 0.045);
           ctx.save();
-          ctx.globalAlpha = 0.7 * (1 - telegraphProgress * 0.3);
-          ctx.strokeStyle = '#ff2200';
-          ctx.shadowColor = '#ff2200';
-          ctx.shadowBlur = 12;
-          ctx.lineWidth = 2;
+          // Outer magenta-red warning ring
+          ctx.globalAlpha = 0.82 * (1 - telegraphProgress * 0.25) * pulse;
+          ctx.strokeStyle = '#ff1133';
+          ctx.shadowColor = '#ff1133';
+          ctx.shadowBlur = 18;
+          ctx.lineWidth = 2.6;
           ctx.beginPath();
           ctx.arc(s.x, s.y, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+          // Inner white-hot ring for legibility at high enemy density
+          ctx.globalAlpha = 0.9 * (1 - telegraphProgress * 0.4) * pulse;
+          ctx.strokeStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 6;
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, ringR - 2, 0, Math.PI * 2);
           ctx.stroke();
           ctx.restore();
         }
@@ -1804,9 +2001,9 @@ const shards = {
         ctx.fillRect(barX, barY, barW * frac, barH);
         if (s.maxShieldHp > 0 && s.shieldHp > 0) {
           const shieldFrac = Math.max(0, s.shieldHp / s.maxShieldHp);
-          ctx.fillStyle = '#0d1c24';
+          ctx.fillStyle = s.isElite ? '#2a0a0d' : '#0d1c24';
           ctx.fillRect(barX, barY - 5, barW, 2);
-          ctx.fillStyle = '#9be7ff';
+          ctx.fillStyle = s.isElite ? '#ff1133' : '#9be7ff';
           ctx.fillRect(barX, barY - 5, barW * shieldFrac, 2);
         }
         ctx.restore();
@@ -1815,6 +2012,10 @@ const shards = {
   },
 
   reset() {
+    for (const _s of this.pool) {
+      window.__TD_LEDGER__?.markRemoved(_s, 'reset');
+      this._destroyEntityGfx(_s);
+    }
     this.pool = [];
     this.spawnTimer = 0;
     this.kamikazeTimer = 0;
@@ -1824,8 +2025,14 @@ const shards = {
     this.formationCooldown = 0;
     this.jackpotSpawned = false;
     this.jackpotSpawnAt = 5000 + Math.random() * 20000;
-    // Destroy all live Pixi gfx on reset
-    for (const _s of this.pool) this._destroyEntityGfx(_s);
+    this.jackpotMeter = 0;
+    this.jackpotMeterTellShown = false;
+    this.jackpotPendingEdge = null;
+    this.jackpotPendingTimer = 0;
+    this.jackpotShimmerEdge = null;
+    this.jackpotShimmerTimer = 0;
+    this.jackpotShimmerDuration = 0;
+    this.jackpotNearMissCooldown = 0;
   },
 
   // â”€â”€â”€ PixiJS Gfx Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1870,6 +2077,40 @@ const shards = {
       }
       if (s._gfxBody) this._syncEntityGfx(s);
     });
+    this._syncJackpotShimmer(layer);
+  },
+
+  _syncJackpotShimmer(layer) {
+    // Pre-spawn tell — gold band along the edge the chip will enter from.
+    if (!this._jackpotShimmerGfx) {
+      this._jackpotShimmerGfx = new PIXI.Graphics();
+      layer.addChild(this._jackpotShimmerGfx);
+    }
+    const g = this._jackpotShimmerGfx;
+    if (!g.parent) layer.addChild(g);
+    g.clear();
+    if (this.jackpotShimmerTimer <= 0 || !this.jackpotShimmerEdge) return;
+    const dur = this.jackpotShimmerDuration || 1500;
+    const t = Math.max(0, Math.min(1, this.jackpotShimmerTimer / dur));
+    // Pulse on top of the linear fade so it shimmers
+    const pulse = 0.6 + 0.4 * Math.sin(getNow() * 0.018);
+    const alpha = t * pulse;
+    const gold = 0xffd24a;
+    const thickness = 24;
+    if (this.jackpotShimmerEdge === 'top') {
+      // Layered bands — outer halo, mid, hot inner edge.
+      g.beginFill(gold, 0.10 * alpha); g.drawRect(PLAY_X, PLAY_Y, PLAY_W, thickness * 2.2); g.endFill();
+      g.beginFill(gold, 0.22 * alpha); g.drawRect(PLAY_X, PLAY_Y, PLAY_W, thickness); g.endFill();
+      g.beginFill(0xffffff, 0.55 * alpha); g.drawRect(PLAY_X, PLAY_Y, PLAY_W, 3); g.endFill();
+    } else if (this.jackpotShimmerEdge === 'left') {
+      g.beginFill(gold, 0.10 * alpha); g.drawRect(PLAY_X, PLAY_Y, thickness * 2.2, PLAY_H); g.endFill();
+      g.beginFill(gold, 0.22 * alpha); g.drawRect(PLAY_X, PLAY_Y, thickness, PLAY_H); g.endFill();
+      g.beginFill(0xffffff, 0.55 * alpha); g.drawRect(PLAY_X, PLAY_Y, 3, PLAY_H); g.endFill();
+    } else if (this.jackpotShimmerEdge === 'right') {
+      g.beginFill(gold, 0.10 * alpha); g.drawRect(PLAY_X + PLAY_W - thickness * 2.2, PLAY_Y, thickness * 2.2, PLAY_H); g.endFill();
+      g.beginFill(gold, 0.22 * alpha); g.drawRect(PLAY_X + PLAY_W - thickness, PLAY_Y, thickness, PLAY_H); g.endFill();
+      g.beginFill(0xffffff, 0.55 * alpha); g.drawRect(PLAY_X + PLAY_W - 3, PLAY_Y, 3, PLAY_H); g.endFill();
+    }
   },
 
   _syncEntityGfx(s) {
@@ -1945,23 +2186,33 @@ const shards = {
       const ci = _hexInt(drawColor);
       const r = s.size;
       g.clear();
-      // Wide bloom fill
-      g.beginFill(ci, 0.12);
-      g.moveTo(0, -r*1.6); g.lineTo(r*1.6, 0); g.lineTo(0, r*1.6); g.lineTo(-r*1.6, 0); g.closePath();
+      const sdR = s.size * 1.8;
+      const sdOuter = makeRegularPolygon(sdR, 4);
+      const sdInner = makeRegularPolygon(sdR * 0.5, 4);
+      const sdPulse = 0.85 + 0.15 * Math.sin(now * 0.005);
+
+      // Outer halo bloom fill
+      g.beginFill(ci, 0.10 * sdPulse);
+      _gfxPolyPath(g, sdOuter, 1.35);
       g.endFill();
-      // Mid corona stroke
-      g.lineStyle(1.8, ci, 0.6);
-      g.moveTo(0, -r); g.lineTo(r, 0); g.lineTo(0, r); g.lineTo(-r, 0); g.closePath();
-      // Counter-rotating outer diamond
-      const ra = s.ringAngle;
-      g.lineStyle(1, ci, 0.45);
-      g.moveTo(Math.cos(ra - Math.PI*0.5)*r*1.5, Math.sin(ra - Math.PI*0.5)*r*1.5);
-      g.lineTo(Math.cos(ra)*r*1.5, Math.sin(ra)*r*1.5);
-      g.lineTo(Math.cos(ra + Math.PI*0.5)*r*1.5, Math.sin(ra + Math.PI*0.5)*r*1.5);
-      g.lineTo(Math.cos(ra + Math.PI)*r*1.5, Math.sin(ra + Math.PI)*r*1.5);
-      g.closePath();
-      // White core dot
-      g.lineStyle(0); g.beginFill(0xffffff, 1); g.drawCircle(0, 0, 2); g.endFill();
+      // Dark interior
+      g.beginFill(0x000000, 0.6);
+      _gfxPolyPath(g, sdOuter, 1);
+      g.endFill();
+      // Outer diamond — wide corona / mid / white core
+      g.lineStyle(4.2, ci, 0.45 * sdPulse);
+      _gfxPolyPath(g, sdOuter, 1);
+      g.lineStyle(2.0, ci, 0.92);
+      _gfxPolyPath(g, sdOuter, 1);
+      g.lineStyle(0.9, 0xffffff, 1);
+      _gfxPolyPath(g, sdOuter, 1);
+      // Inner diamond — corona / mid / white core
+      g.lineStyle(2.6, ci, 0.55 * sdPulse);
+      _gfxPolyPath(g, sdInner, 1);
+      g.lineStyle(1.3, ci, 0.96);
+      _gfxPolyPath(g, sdInner, 1);
+      g.lineStyle(0.7, 0xffffff, 1);
+      _gfxPolyPath(g, sdInner, 1);
 
       ov.clear();
       // Tether to target (world coords)
@@ -1990,31 +2241,51 @@ const shards = {
       body.rotation = s.turretLocked ? 0 : s.angle;
       const drawColor = s.flashTimer > 0 ? '#ffffff' : s.color;
       const ci = _hexInt(drawColor);
-      const turretPts = makeRegularPolygon(s.size * 1.9, 8, Math.PI / 8);
+      const tR = s.size * 1.9;
+      const tOuter = makeRegularPolygon(tR, 6);
+      const tInner = makeRegularPolygon(tR * 0.5, 6);
+      const tPulse = 0.85 + 0.15 * Math.sin(now * 0.005);
       g.clear();
-      // Wide bloom fill (scaled up)
-      g.beginFill(ci, 0.15);
-      _gfxPolyPath(g, turretPts, 1.08);
+
+      // Outer halo bloom
+      g.beginFill(ci, 0.10 * tPulse);
+      _gfxPolyPath(g, tOuter, 1.35);
       g.endFill();
-      // Mid corona stroke
-      g.lineStyle(2, ci, 0.55);
-      _gfxPolyPath(g, turretPts, 1);
-      // Hard white edge
+      // Dark interior
+      g.beginFill(0x000000, 0.65);
+      _gfxPolyPath(g, tOuter, 1);
+      g.endFill();
+      // Outer hex — wide corona / mid / white core
+      g.lineStyle(4.2, ci, 0.45 * tPulse);
+      _gfxPolyPath(g, tOuter, 1);
+      g.lineStyle(2.0, ci, 0.92);
+      _gfxPolyPath(g, tOuter, 1);
+      g.lineStyle(0.9, 0xffffff, 1);
+      _gfxPolyPath(g, tOuter, 1);
+      // Inner hex — corona / mid / white core
+      g.lineStyle(2.6, ci, 0.55 * tPulse);
+      _gfxPolyPath(g, tInner, 1);
+      g.lineStyle(1.3, ci, 0.96);
+      _gfxPolyPath(g, tInner, 1);
       g.lineStyle(0.7, 0xffffff, 1);
-      _gfxPolyPath(g, turretPts, 1);
-      // Center dot
-      g.beginFill(0xffffff, 1); g.drawCircle(0, 0, 2.2); g.endFill();
+      _gfxPolyPath(g, tInner, 1);
+      // Center white square
+      g.beginFill(0xffffff, 1);
+      g.drawRect(-1.5, -1.5, 3, 3);
+      g.endFill();
       // Targeting ring when locked
       if (s.turretLocked) {
         g.lineStyle(1, ci, 0.18);
         g.drawCircle(0, 0, Math.max(0.1, s.size * 2));
       }
-      // Charging glow
+      // Charging glow + expanding telegraph ring
       if (s.turretCharging) {
-        const ca = 1 - (s.turretChargeTimer / 300);
+        const ca = 1 - (s.turretChargeTimer / 500);
         g.beginFill(0xffffff, ca);
         g.drawCircle(0, 0, 4);
         g.endFill();
+        g.lineStyle(1.4, 0xffffff, ca * 0.85);
+        g.drawCircle(0, 0, Math.max(0.1, s.size * 2.5 * ca));
       }
       // Shield drone protection shell
       if (s.isShieldProtected) {
@@ -2037,113 +2308,104 @@ const shards = {
       return;
     }
 
-    // â”€â”€ Jackpot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Jackpot — Casino Chip ────────────────────────────────────────────
     if (s.isJackpot) {
-      {
+      const r = s.size;
+      // Last 2s "panic" state shifts gold → amber and doubles pulse rate.
+      const isPanic = !s.jackpotCashingOut && s.jackpotLife <= 2000;
+      const pulseRate = isPanic ? 0.016 : 0.008;
+      const pulse = 0.5 + 0.5 * Math.sin(now * pulseRate);
+      // Cash-out scale + opacity (1 → 0 over jackpotCashOutDuration, ease-in)
+      let scale = 1, alpha = 1;
+      if (s.jackpotCashingOut) {
+        const t = 1 - Math.max(0, s.jackpotCashOutTimer / s.jackpotCashOutDuration);
+        scale = 1 - (t * t);
+        alpha = 1 - t;
+      }
+
       body.x = s.x;
       body.y = s.y;
-      body.rotation = 0;
-      const r = s.size;
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-      const amber = s.flashTimer > 0 ? 0xffffff : 0xffb020;
-      const amberB = s.flashTimer > 0 ? 0xffffff : 0xffe090;
-      const chipR = r * 1.42;
-      const faceR = r * 1.02;
-      const coreR = r * 0.58;
-      const insetOuterR = chipR * 0.94;
-      const insetInnerR = chipR * 0.72;
+      body.rotation = s.angle;
+      body.scale.set(scale, scale);
+      body.alpha = alpha;
+
+      // Color palette — gold normally, amber in panic, white on flash
+      const baseGold = isPanic ? 0xd79820 : 0xffd24a;
+      const ringWhite = 0xffffff;
+      const coreBlack = 0x0a0a0a;
+      const flashing = s.flashTimer > 0;
+      const discColor = flashing ? 0xffffff : baseGold;
+
+      const chipR = r;            // outer chip radius
+      const ringR = r * 0.92;     // inner edge of black border
+      const coreR = r * 0.55;     // black inner circle
+      const stripeOuter = r * 0.99;
+      const stripeInner = r * 0.74;
+      const stripeHalfWidth = r * 0.13;
+
       g.clear();
-      g.beginFill(amber, 0.14 + pulse * 0.07);
-      g.drawCircle(0, 0, chipR * 1.08);
+
+      // Outer pulsing glow halo (drives the bloom/CA post)
+      g.beginFill(discColor, 0.16 + pulse * 0.10);
+      g.drawCircle(0, 0, chipR * 1.20);
       g.endFill();
-      g.beginFill(0xd79820, 0.94);
+
+      // Black outer ring
+      g.beginFill(coreBlack, 0.95);
       g.drawCircle(0, 0, chipR);
       g.endFill();
-      g.lineStyle(2.2, amberB, 0.95);
-      g.drawCircle(0, 0, chipR);
-      g.lineStyle(1.2, 0xfff0b8, 0.82);
-      g.drawCircle(0, 0, chipR * 0.84);
-      g.beginFill(0xfff3cc, 0.92);
+
+      // Gold disc face (sits inside the black ring)
+      g.beginFill(discColor, 0.97);
+      g.drawCircle(0, 0, ringR);
+      g.endFill();
+
+      // Six white edge stripes — radial spokes around the rim
+      g.beginFill(ringWhite, 0.95);
       for (let i = 0; i < 6; i++) {
-        const a = s.angle + i * (Math.PI / 3);
+        const a = i * (Math.PI / 3);
         const c = Math.cos(a);
         const si = Math.sin(a);
         const px = -si;
         const py = c;
-        g.moveTo(c * insetOuterR + px * chipR * 0.14, si * insetOuterR + py * chipR * 0.14);
-        g.lineTo(c * insetOuterR - px * chipR * 0.14, si * insetOuterR - py * chipR * 0.14);
-        g.lineTo(c * insetInnerR - px * chipR * 0.10, si * insetInnerR - py * chipR * 0.10);
-        g.lineTo(c * insetInnerR + px * chipR * 0.10, si * insetInnerR + py * chipR * 0.10);
+        g.moveTo(c * stripeOuter + px * stripeHalfWidth, si * stripeOuter + py * stripeHalfWidth);
+        g.lineTo(c * stripeOuter - px * stripeHalfWidth, si * stripeOuter - py * stripeHalfWidth);
+        g.lineTo(c * stripeInner - px * stripeHalfWidth, si * stripeInner - py * stripeHalfWidth);
+        g.lineTo(c * stripeInner + px * stripeHalfWidth, si * stripeInner + py * stripeHalfWidth);
         g.closePath();
       }
       g.endFill();
-      g.beginFill(0xf5c55e, 0.96);
-      g.drawCircle(0, 0, faceR);
-      g.endFill();
-      g.lineStyle(1.4, 0xfff1bf, 0.96);
-      g.drawCircle(0, 0, faceR);
-      g.lineStyle(1.1, 0xfff6dc, 0.9);
-      g.drawCircle(0, 0, coreR * 1.18);
-      g.beginFill(0xfff9ef, 1);
+
+      // Inner gold ring border (between stripes and core)
+      g.lineStyle(1.2, coreBlack, 0.7);
+      g.drawCircle(0, 0, stripeInner);
+
+      // Black inner core
+      g.beginFill(coreBlack, 0.95);
       g.drawCircle(0, 0, coreR);
       g.endFill();
 
+      // Gold dot at very center (denomination stand-in)
+      g.lineStyle(0);
+      g.beginFill(discColor, 0.95);
+      g.drawCircle(0, 0, coreR * 0.34);
+      g.endFill();
+
       ov.clear();
-      {
+      ov.alpha = alpha;
+      // Segmented HP bar (decorative — payout is flat, but bar still tracks remaining HP)
+      if (!s.jackpotCashingOut) {
         const segs = s.maxHp, segW = 9, segH = 4, segGap = 2;
         const totalW = segs * segW + (segs - 1) * segGap;
         const barX = s.x - totalW / 2, barY = s.y - r * 1.7 - 10;
+        const segColor = isPanic ? 0xd79820 : 0xffd24a;
         for (let i = 0; i < segs; i++) {
           const sx = barX + i * (segW + segGap);
           const filled = i < s.hp;
-          ov.beginFill(filled ? 0xffb020 : 0x554400, filled ? 0.95 : 0.25);
+          ov.beginFill(filled ? segColor : 0x554400, filled ? 0.95 : 0.25);
           ov.drawRect(sx, barY, segW, segH);
           ov.endFill();
         }
-      }
-      return;
-      }
-
-      body.x = s.x; body.y = s.y; body.rotation = 0;
-      const r = s.size;
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
-      const amber  = s.flashTimer > 0 ? 0xffffff : 0xffb020;
-      const amberB = s.flashTimer > 0 ? 0xffffff : 0xffe090;
-      const outerR = r * 1.485, innerR2 = r * 0.594;
-      g.clear();
-      // Star fill (bloom)
-      g.beginFill(amber, 0.22 + pulse * 0.10);
-      _gfxStarPath(g, 0, 0, outerR, innerR2, 5, s.angle);
-      g.endFill();
-      // Star stroke
-      g.lineStyle(2, amberB, 0.95);
-      _gfxStarPath(g, 0, 0, outerR, innerR2, 5, s.angle);
-      // Core dot
-      g.beginFill(0xffffff, 1); g.drawCircle(0, 0, r*0.20); g.endFill();
-
-      ov.clear();
-      // Segmented HP bar
-      {
-        const segs = s.maxHp, segW = 9, segH = 4, segGap = 2;
-        const totalW = segs * segW + (segs-1) * segGap;
-        const barX = s.x - totalW/2, barY = s.y - r*1.7 - 10;
-        for (let i = 0; i < segs; i++) {
-          const sx = barX + i*(segW+segGap);
-          const filled = i < s.hp;
-          ov.beginFill(filled ? 0xffb020 : 0x554400, filled ? 0.95 : 0.25);
-          ov.drawRect(sx, barY, segW, segH);
-          ov.endFill();
-        }
-      }
-      // Motion trail
-      const tSpd = Math.hypot(s.vx, s.vy);
-      if (tSpd > 25) {
-        const nx = -s.vx/tSpd, ny = -s.vy/tSpd;
-        const tLen = s.jackpotEscaping ? 90 : 28 + Math.min(40, tSpd*0.07);
-        const ta = s.jackpotEscaping ? 0.88 : 0.52 + pulse*0.18;
-        ov.lineStyle(s.jackpotEscaping ? 4.5 : 3, 0xffb020, ta);
-        ov.moveTo(s.x, s.y);
-        ov.lineTo(s.x + nx*tLen, s.y + ny*tLen);
       }
       return;
     }
@@ -2155,53 +2417,86 @@ const shards = {
     const drawColor = s.flashTimer > 0 ? '#ffffff' : s.color;
     const ci = _hexInt(drawColor);
     const flicker = isKamikaze ? (0.75 + 0.25 * Math.sin(now * 0.025 + s.x * 0.01)) : 1;
+    const isBasicShard = !!s.isTriangleShard;
 
     g.clear();
     if (s.pts) {
-      // Outer bloom inflated fill
-      if (isKamikaze) {
-        g.beginFill(0xff2200, 0.06);
+      if (isBasicShard) {
+        const pulse = 0.85 + 0.15 * Math.sin(now * 0.005 + s.x * 0.012);
+        const innerPts = s.pts.map(p => ({ x: p.x * 0.5, y: p.y * 0.5 }));
+
+        // Outer halo bloom
+        g.beginFill(ci, 0.08 * pulse);
         _gfxPolyPath(g, s.pts, 1.35);
         g.endFill();
+
+        // Dark interior
+        g.beginFill(0x000000, 0.55);
+        _gfxPolyPath(g, s.pts, 1);
+        g.endFill();
+
+        // Outer triangle — wide corona stroke
+        g.lineStyle(4.2, ci, 0.40 * pulse);
+        _gfxPolyPath(g, s.pts, 1);
+
+        // Outer triangle — mid stroke
+        g.lineStyle(2.0, ci, 0.92);
+        _gfxPolyPath(g, s.pts, 1);
+
+        // Outer triangle — crisp white core
+        g.lineStyle(0.9, 0xffffff, 1.0);
+        _gfxPolyPath(g, s.pts, 1);
+
+        // Inner triangle — corona
+        g.lineStyle(2.6, ci, 0.55 * pulse);
+        _gfxPolyPath(g, innerPts, 1);
+
+        // Inner triangle — mid stroke
+        g.lineStyle(1.3, ci, 0.96);
+        _gfxPolyPath(g, innerPts, 1);
+
+        // Inner triangle — crisp white core
+        g.lineStyle(0.7, 0xffffff, 1.0);
+        _gfxPolyPath(g, innerPts, 1);
+      } else {
+        // Outer bloom inflated fill
+        if (isKamikaze) {
+          g.beginFill(0xff2200, 0.06);
+          _gfxPolyPath(g, s.pts, 1.35);
+          g.endFill();
+        }
+        g.beginFill(ci, 0.05);
+        _gfxPolyPath(g, s.pts, 1.28);
+        g.endFill();
+
+        // Body fill + corona stroke
+        g.beginFill(ci, (isKamikaze ? 0.1 : 0.08) * flicker);
+        _gfxPolyPath(g, s.pts, 1);
+        g.endFill();
+        g.lineStyle(isKamikaze ? 2.8 : (s.isElite ? 3.5 : 2.5), ci, (isKamikaze ? 0.62 : 0.5) * flicker);
+        _gfxPolyPath(g, s.pts, 1);
+
+        // Hard white edge
+        g.lineStyle(s.isElite ? 1.2 : 0.9, 0xffffff, (s.isElite ? 0.55 : 0.38) * flicker);
+        _gfxPolyPath(g, s.pts, 1);
+
+        // Interior crack line
+        g.lineStyle(0.5, ci, (isKamikaze ? 0.72 : 0.6) * flicker);
+        g.moveTo(s.pts[0].x * 0.6, s.pts[0].y * 0.6);
+        const mid = Math.floor(s.pts.length / 2);
+        g.lineTo(s.pts[mid].x * 0.6, s.pts[mid].y * 0.6);
       }
-      g.beginFill(ci, 0.05);
-      _gfxPolyPath(g, s.pts, 1.28);
-      g.endFill();
-
-      // Body fill + corona stroke
-      g.beginFill(ci, (isKamikaze ? 0.1 : 0.08) * flicker);
-      _gfxPolyPath(g, s.pts, 1);
-      g.endFill();
-      g.lineStyle(isKamikaze ? 2.8 : (s.isElite ? 3.5 : 2.5), ci, (isKamikaze ? 0.62 : 0.5) * flicker);
-      _gfxPolyPath(g, s.pts, 1);
-
-      // Hard white edge
-      g.lineStyle(s.isElite ? 1.2 : 0.9, 0xffffff, (s.isElite ? 0.55 : 0.38) * flicker);
-      _gfxPolyPath(g, s.pts, 1);
-
-      // Interior crack line
-      g.lineStyle(0.5, ci, (isKamikaze ? 0.72 : 0.6) * flicker);
-      g.moveTo(s.pts[0].x * 0.6, s.pts[0].y * 0.6);
-      const mid = Math.floor(s.pts.length / 2);
-      g.lineTo(s.pts[mid].x * 0.6, s.pts[mid].y * 0.6);
     }
 
-    // Elite ring + inner hexagon
-    if (s.isElite) {
-      const ep = Math.sin(now * 0.008) * 0.5 + 0.5;
-      const eliteR = Math.max(0.1, s.size * (1.3 + ep * 0.15));
-      g.lineStyle(1.5, ci, 0.3 + ep * 0.45);
-      g.drawCircle(0, 0, eliteR);
-      const innerPts = makeRegularPolygon(s.size * 0.48, 6, -s.angle * 2);
-      g.lineStyle(1.0, ci, 0.30 + ep * 0.20);
-      _gfxPolyPath(g, innerPts, 1);
-    }
-
-    // Intrinsic shield ring (mechanic)
+    // Intrinsic shield ring (mechanic) — elite shield reads as glowing red ring
     if (s.maxShieldHp > 0 && s.shieldHp > 0) {
       const sp = 0.65 + 0.35 * Math.sin(now * 0.01 + s.x * 0.01);
-      g.lineStyle(2, 0x9be7ff, 0.35 + sp * 0.25);
-      g.drawCircle(0, 0, Math.max(0.1, s.size * 1.05));
+      const sFrac = s.shieldHp / s.maxShieldHp;
+      const ringHex = s.isElite ? 0xff1133 : 0x9be7ff;
+      const baseAlpha = s.isElite ? 0.45 : 0.35;
+      const ringRadius = Math.max(0.1, s.size * (s.isElite ? 1.35 : 1.05));
+      g.lineStyle(s.isElite ? 2.4 : 2, ringHex, baseAlpha + sp * 0.3 * sFrac);
+      g.drawCircle(0, 0, ringRadius);
     }
 
     // Shield drone protection shell
@@ -2215,6 +2510,17 @@ const shards = {
     }
 
     ov.clear();
+    // Drift streak (world coords) — faint additive trail, length ∝ current speed
+    if (s.isDrift) {
+      const spd = Math.hypot(s.vx, s.vy);
+      if (spd > 60) {
+        const nx = -s.vx/spd, ny = -s.vy/spd;
+        const tLen = Math.min(spd * 0.05, 26);
+        ov.lineStyle(1.4, ci, 0.32);
+        ov.moveTo(s.x, s.y);
+        ov.lineTo(s.x + nx*tLen, s.y + ny*tLen);
+      }
+    }
     // Kamikaze trail (world coords)
     if (isKamikaze) {
       const spd = Math.hypot(s.vx, s.vy);
@@ -2225,12 +2531,15 @@ const shards = {
         ov.moveTo(s.x, s.y);
         ov.lineTo(s.x + nx*tLen, s.y + ny*tLen);
       }
-      // Telegraph charge ring
+      // Telegraph charge ring — outer magenta-red + inner white-hot for legibility
       if (s.isCharger && s.chargerState === 'telegraph') {
         const tp = 1 - s.chargerTelegraphTimer / 350;
         const rr = s.size * (2.5 - tp * 1.5);
-        ov.lineStyle(2, 0xff2200, 0.7 * (1 - tp * 0.3));
+        const pulse = 0.7 + 0.3 * Math.sin(getNow() * 0.045);
+        ov.lineStyle(2.6, 0xff1133, 0.82 * (1 - tp * 0.25) * pulse);
         ov.drawCircle(s.x, s.y, rr);
+        ov.lineStyle(1.1, 0xffffff, 0.9 * (1 - tp * 0.4) * pulse);
+        ov.drawCircle(s.x, s.y, rr - 2);
       }
     }
 
@@ -2246,8 +2555,10 @@ const shards = {
       ov.beginFill((rc<<16)|(gc<<8), fade*0.85); ov.drawRect(barX, barY, barW*frac, barH); ov.endFill();
       if (s.maxShieldHp > 0 && s.shieldHp > 0) {
         const sf = Math.max(0, s.shieldHp/s.maxShieldHp);
-        ov.beginFill(0x0d1c24, fade*0.85); ov.drawRect(barX, barY-5, barW, 2); ov.endFill();
-        ov.beginFill(0x9be7ff, fade*0.85); ov.drawRect(barX, barY-5, barW*sf, 2); ov.endFill();
+        const bgHex = s.isElite ? 0x2a0a0d : 0x0d1c24;
+        const fgHex = s.isElite ? 0xff1133 : 0x9be7ff;
+        ov.beginFill(bgHex, fade*0.85); ov.drawRect(barX, barY-5, barW, 2); ov.endFill();
+        ov.beginFill(fgHex, fade*0.85); ov.drawRect(barX, barY-5, barW*sf, 2); ov.endFill();
       }
     }
   }
@@ -2269,8 +2580,8 @@ const enemyBullets = {
       vy: Math.sin(angle) * speed,
       life: 30000,
       isTurret,
-      size: opts.size || (isTurret ? 5.75 : 8),
-      hitRadius: opts.hitRadius || 8
+      size: opts.size || (isTurret ? 9 : 8),
+      hitRadius: opts.hitRadius || (isTurret ? 11 : 8)
     });
   },
 
@@ -2297,16 +2608,21 @@ const enemyBullets = {
     this.pool.forEach(b => {
       ctx.save();
       if (b.isTurret) {
-        // Red sphere â€” same threat lane as elite/turret enemies
-        setGlow('#ff2244', 22);
-        ctx.fillStyle = '#ff2244';
+        // Heated shell — yellow-orange core through red rim, red bloom
+        const r = b.size || 9;
+        setGlow('#ff2244', 28);
+        const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+        grad.addColorStop(0, '#ffe066');
+        grad.addColorStop(0.55, '#ff5522');
+        grad.addColorStop(1, '#ff2244');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(b.x, b.y, b.size || 5.75, 0, Math.PI * 2);
+        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
         ctx.fill();
-        setGlow('#ffffff', 8);
-        ctx.fillStyle = '#fff1f4';
+        setGlow('#ffffff', 10);
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(b.x - (b.size || 5.75) * 0.24, b.y - (b.size || 5.75) * 0.24, Math.max(2.07, (b.size || 5.75) * 0.36), 0, Math.PI * 2);
+        ctx.arc(b.x - r * 0.24, b.y - r * 0.24, Math.max(2.07, r * 0.36), 0, Math.PI * 2);
         ctx.fill();
       } else {
         const color = '#ff3030';
@@ -2356,11 +2672,13 @@ const enemyBullets = {
       const g = b._gfx;
       g.clear();
       if (b.isTurret) {
-        const sz = b.size || 5.75;
-        // Red sphere bloom
+        const sz = b.size || 9;
+        // Layered concentric fills to fake the radial gradient: red rim → orange mid → yellow core
         g.beginFill(0xff2244, 1); g.drawCircle(b.x, b.y, sz); g.endFill();
+        g.beginFill(0xff5522, 1); g.drawCircle(b.x, b.y, sz * 0.7); g.endFill();
+        g.beginFill(0xffe066, 1); g.drawCircle(b.x, b.y, sz * 0.4); g.endFill();
         // Specular highlight
-        g.beginFill(0xfff1f4, 1);
+        g.beginFill(0xffffff, 1);
         g.drawCircle(b.x - sz*0.24, b.y - sz*0.24, Math.max(2.07, sz*0.36));
         g.endFill();
       } else {
@@ -2521,6 +2839,23 @@ function rectCircleTouch(cx, cy, cr, rx, ry, rw, rh) {
   return dx * dx + dy * dy < cr * cr;
 }
 
+function getDroneDashCollisionSegment(radius) {
+  const prevX = typeof drone.prevX === 'number' ? drone.prevX : drone.x;
+  const prevY = typeof drone.prevY === 'number' ? drone.prevY : drone.y;
+  return {
+    ax: prevX,
+    ay: prevY,
+    bx: drone.x,
+    by: drone.y,
+    radius
+  };
+}
+
+function segmentTouchesCircle(ax, ay, bx, by, radius, cx, cy, cr) {
+  const touchRadius = radius + cr;
+  return pointToSegmentDistanceSq(cx, cy, ax, ay, bx, by) <= touchRadius * touchRadius;
+}
+
 function applyDamageToShard(s, damage, options = {}) {
   if (s.isShieldProtected && !options.bypassShield) {
     impactFX.onHit(s.x, s.y, '#00ccff');
@@ -2531,8 +2866,19 @@ function applyDamageToShard(s, damage, options = {}) {
     s.shieldHp = Math.max(0, s.shieldHp - damage);
     s.flashTimer = 80;
     s.hpBarTimer = 900;
-    impactFX.onHit(s.x, s.y, '#9be7ff');
-    audio.play(s.shieldHp <= 0 ? 'shieldBreak' : 'shieldHit');
+    const ringColor = s.isElite ? '#ff1133' : '#9be7ff';
+    impactFX.onHit(s.x, s.y, ringColor);
+    if (s.shieldHp <= 0) {
+      audio.play('shieldBreak');
+      if (s.isElite) {
+        // Shield-break beat: shatter fragments + brief flash, no global slowmo
+        fragments.burst(s.x, s.y, '#ff1133', s.size * 1.1, false);
+        impactFX.onKill(s.x, s.y, '#ffffff');
+        s.flashTimer = 120;
+      }
+    } else {
+      audio.play('shieldHit');
+    }
     return false;
   }
   s.hp -= damage;
@@ -2556,22 +2902,35 @@ function destroyShard(s) {
       d.retargetTimer = 400;
     }
   }
-  // Jackpot kill â€” special handling
+  // Jackpot kill — special handling
   if (s.isJackpot) {
-    audio.play('eliteDeath');
-    fragments.burst(s.x, s.y, '#ffb020', s.size * 2.5, true);
-    impactFX.onKill(s.x, s.y, '#ffb020');
-    smokeParticles.spawn(s.x, s.y, '#ffb020');
+    if (s.jackpotHeartbeatActive) {
+      audio.stopLoop('jackpotHeartbeatLoop');
+      s.jackpotHeartbeatActive = false;
+    }
+    // Consume one "pull" — subtract cap from meter so aggressive play can earn another.
+    shards.jackpotMeter = Math.max(0, shards.jackpotMeter - shards.jackpotMeterCap);
+    shards.jackpotSpawned = false;
+    shards.jackpotMeterTellShown = false;
+    shards.jackpotPendingEdge = null;
+    shards.jackpotPendingTimer = 0;
+    audio.play('jackpotKill');
+    fragments.burst(s.x, s.y, '#ffd24a', s.size * 2.5, true);
+    impactFX.onKill(s.x, s.y, '#ffd24a');
+    smokeParticles.spawn(s.x, s.y, '#ffd24a');
     shards._destroyEntityGfx(s);
     const jackpotIdx = shards.pool.indexOf(s);
-    if (jackpotIdx >= 0) shards.pool.splice(jackpotIdx, 1);
+    if (jackpotIdx >= 0) {
+      window.__TD_LEDGER__?.markRemoved(s, 'killed');
+      shards.pool.splice(jackpotIdx, 1);
+    }
     const jackpotScore = stage.onKill(s);
-    streakCallout.show('JACKPOT!', '#ffb020', 2200, 2.0, 'center');
+    streakCallout.show('JACKPOT!', '#ffd24a', 2200, 2.0, 'center');
     pickups.popups.push({
       x: s.x,
       y: s.y - 10,
       label: '+' + jackpotScore,
-      color: '#ffb020',
+      color: '#ffd24a',
       coreColor: '#ffffff',
       size: 51,
       life: 1200,
@@ -2590,7 +2949,10 @@ function destroyShard(s) {
   smokeParticles.spawn(s.x, s.y, s.color);
   shards._destroyEntityGfx(s);
   const idx = shards.pool.indexOf(s);
-  if (idx >= 0) shards.pool.splice(idx, 1);
+  if (idx >= 0) {
+    window.__TD_LEDGER__?.markRemoved(s, 'killed');
+    shards.pool.splice(idx, 1);
+  }
   if (s.isGatePiece || s.isBonusRing) return;
   const scoreVal = stage.onKill(s);
   const scoreColor = (s.isTurret || s.isShieldDrone || s.isKamikaze) ? '#ff7744'
@@ -2629,7 +2991,7 @@ function checkCollisions() {
 
     for (let i = shards.pool.length - 1; i >= 0; i--) {
       const s = shards.pool[i];
-      const hitR = s.isJackpot ? s.size * 0.6
+      const hitR = s.isJackpot ? s.size * 1.0
         : s.isTurret ? s.size * 2.5
         : s.isShieldDrone ? s.size * 3.0
         : s.size * 0.75;
@@ -2642,15 +3004,31 @@ function checkCollisions() {
         : polygonPoints
         ? segmentTouchesPolygon(bulletBody.ax, bulletBody.ay, bulletBody.bx, bulletBody.by, bulletBody.radius, polygonPoints)
         : circlesTouch(b.x, b.y, b.hitRadius || 8, s.x, s.y, hitR);
+      // Near-miss feedback for jackpot — bullets that whiff close trigger casino sparks + clink.
+      // Skip while cashing out; cooldown prevents spam during bullet streams.
+      if (!bulletHit && s.isJackpot && !s.jackpotCashingOut && shards.jackpotNearMissCooldown <= 0) {
+        const dx = b.x - s.x, dy = b.y - s.y;
+        const distSq = dx * dx + dy * dy;
+        const nearR = hitR * 1.8;
+        if (distSq < nearR * nearR) {
+          shards.jackpotNearMissCooldown = 80;
+          hitSparks.emit(b.x, b.y, 0, -1, '#ffd24a');
+          audio.play('nearMissClink');
+        }
+      }
       if (bulletHit) {
         if (s.isGatePiece) {
           bulletAlive = false;
           break;
         }
         const shielded = s.shieldHp > 0;
-        const killed = applyDamageToShard(s, b.damage || player.effectiveDamage);
-        hitSparks.emit(b.x, b.y, 1, 0, shielded ? '#9be7ff' : s.color);
-        impactFX.onHit(b.x, b.y, shielded ? '#9be7ff' : s.color);
+        const baseDmg = b.damage || player.effectiveDamage;
+        const finalDmg = (b.laser && (s.isElite || shielded)) ? baseDmg * LASER_DAMAGE_MULT : baseDmg;
+        const killed = applyDamageToShard(s, finalDmg);
+        const ringColor = shielded ? (s.isElite ? '#ff1133' : '#9be7ff') : s.color;
+        hitSparks.emit(b.x, b.y, 1, 0, ringColor);
+        impactFX.onHit(b.x, b.y, ringColor);
+        if (s.isJackpot && !killed) audio.play('jackpotHit');
         if (killed) destroyShard(s);
         if (b.pierce > 0) {
           b.pierce--;
@@ -2686,10 +3064,33 @@ function checkCollisions() {
     if (s.isJackpot) continue;
     const bodyR = s.isTurret ? s.size * 2.5 : s.size * 0.75;
     const polygonPoints = usesPolygonCollision(s) ? getShardPolygonWorldPoints(s) : null;
+    const kamikazeDashBody = s.isKamikaze && dash.duration > 0
+      ? getDroneDashCollisionSegment(18)
+      : null;
     const playerHit = s.isBonusRing
       ? circlesTouch(s.x, s.y, getBonusRingPickupRadius(s), drone.x, drone.y, 14)
       : s.isGatePiece
       ? rectCircleTouch(drone.x, drone.y, 14, s.x, s.y, s.gateWidth, s.gateHeight)
+      : kamikazeDashBody && polygonPoints
+      ? segmentTouchesPolygon(
+          kamikazeDashBody.ax,
+          kamikazeDashBody.ay,
+          kamikazeDashBody.bx,
+          kamikazeDashBody.by,
+          kamikazeDashBody.radius,
+          polygonPoints
+        )
+      : kamikazeDashBody
+      ? segmentTouchesCircle(
+          kamikazeDashBody.ax,
+          kamikazeDashBody.ay,
+          kamikazeDashBody.bx,
+          kamikazeDashBody.by,
+          kamikazeDashBody.radius,
+          s.x,
+          s.y,
+          bodyR
+        )
       : polygonPoints
       ? circleTouchesPolygon(drone.x, drone.y, 14, polygonPoints)
       : circlesTouch(s.x, s.y, bodyR, drone.x, drone.y, 14);
@@ -2707,6 +3108,18 @@ function checkCollisions() {
         dash.hitEnemy = true;
         hitSparks.emit(s.x, s.y, -1, 0, COLOR_CYAN);
         impactFX.onHit(s.x, s.y, COLOR_CYAN);
+        // Dash-killing a kamikaze is the Stage 10 mini-game — amp the feedback
+        // so it reads distinct from a regular bullet kill. Dual-palette sparks
+        // (dash cyan + kamikaze red) plus a CA punch for tactile impact.
+        if (s.isKamikaze) {
+          hitSparks.emit(s.x, s.y, 1, 0, s.color);
+          hitSparks.emit(s.x, s.y, 0, -1, '#ffffff');
+          impactFX.onHit(s.x, s.y, s.color);
+          burstParticles.spawn(s.x, s.y, s.color);
+          if (typeof pixiPost !== 'undefined' && typeof pixiPost.triggerHit === 'function') {
+            pixiPost.triggerHit();
+          }
+        }
         s.shieldHp = 0;
         s.hp = 0;
         destroyShard(s);
@@ -2716,6 +3129,7 @@ function checkCollisions() {
           burstParticles.spawn(s.x, s.y, s.color);
         }
         shards._destroyEntityGfx(s);
+        window.__TD_LEDGER__?.markRemoved(s, 'playerContact');
         shards.pool.splice(i, 1);
         player.hit();
       }

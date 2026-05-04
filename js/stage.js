@@ -29,9 +29,15 @@ const stage = {
   kills: 0,
   totalKills: 0,
   timer: STAGE_DURATION,
+  elapsedMs: 0,
   flashTimer: 0,
   FLASH_MS: 5500,
+  stageSplashTimer: 0,
+  stageSplashNum: 0,
+  STAGE_SPLASH_MS: 1100,
   shakeTimer: 0,
+  shakeDuration: 0,
+  shakeBaseIntensity: 8,
   shakeIntensity: 0,
   slowmoTimer: 0,
   labelScale: 1,
@@ -43,10 +49,19 @@ const stage = {
   obstacleTriggered: false,
   finaleActive: false,
   finaleClearDelay: 0,
+  climaxActive: false,
+  climaxFired: new Set(),
   OBSTACLE_TRIGGER_AT: 20000,
   OBSTACLE_DURATION: 5200,
   OBSTACLE_TRANSITION_MS: 450,
   BONUS_RING_SCORE: 200,
+
+  _startShake(duration, intensity) {
+    this.shakeTimer = duration;
+    this.shakeDuration = duration;
+    this.shakeBaseIntensity = intensity;
+    this.shakeIntensity = intensity;
+  },
 
   onKill(enemy, fromNuke = false) {
     if (enemy && enemy.isBonusRing) return 0;
@@ -61,6 +76,12 @@ const stage = {
       player.score += scoreAward;
     }
 
+    // Charge the jackpot meter — weighted by kill score, never from the jackpot itself,
+    // and only when the kill is real (not a screen-nuke).
+    if (typeof shards !== 'undefined' && !fromNuke && enemy && !enemy.isJackpot && !shards.jackpotSpawned) {
+      shards.jackpotMeter += scoreValue;
+    }
+
     if (isElite && !fromNuke) {
       const type = ALT_FIRE_TYPES[altFireDropIndex % ALT_FIRE_TYPES.length];
       altFireDropIndex++;
@@ -70,7 +91,7 @@ const stage = {
     }
 
     if (this.totalKills > 0 && this.totalKills % 200 === 0) {
-      player.lives = Math.min(5, player.lives + 1);
+      player.lives = Math.min(6, player.lives + 1);
       audio.play('chainMilestone');
       streakCallout.show(`${this.totalKills} KILLS  +LIFE`, '#ff3366', 1500, 2.2, 'top');
       this.flashTimer = 700;
@@ -79,6 +100,162 @@ const stage = {
     }
 
     return scoreAward;
+  },
+
+  _queueClimaxEnemies(type, enemies) {
+    if (!Array.isArray(enemies) || !enemies.length || typeof shards === 'undefined') return false;
+    const list = enemies.filter(Boolean);
+
+    list.forEach(enemy => {
+      enemy.isClimaxEnemy = true;
+      enemy.climaxType = type;
+      shards.pool.push(enemy);
+      if (enemy.isTurret && typeof turretIndicators !== 'undefined') {
+        turretIndicators.spawn(enemy.x);
+      }
+    });
+    return true;
+  },
+
+  _spawnClimaxKamikazePack() {
+    if (typeof spawnKamikaze !== 'function') return false;
+    const count = 4 + Math.floor(Math.random() * 3);
+    const centerX = Math.max(PLAY_X + 52, Math.min(PLAY_X + PLAY_W - 52, drone.x));
+    const spacing = 22;
+    const enemies = [];
+    for (let i = 0; i < count; i++) {
+      const offset = (i - (count - 1) / 2) * spacing + (Math.random() - 0.5) * 8;
+      const k = spawnKamikaze();
+      k.x = Math.max(PLAY_X + 20, Math.min(PLAY_X + PLAY_W - 20, centerX + offset));
+      k.y = PLAY_Y - 22 - Math.random() * 20;
+      k.chargerHuntVx = k.x < drone.x ? 47 : -47;
+      k.vx = k.chargerHuntVx;
+      enemies.push(k);
+    }
+    return this._queueClimaxEnemies('kamikazePack', enemies);
+  },
+
+  _spawnClimaxSwarmBurst() {
+    if (typeof spawnShardFromEdge !== 'function') return false;
+    const count = 8 + Math.floor(Math.random() * 3);
+    const enemies = [];
+    for (let i = 0; i < count; i++) {
+      const x = PLAY_X + 34 + Math.random() * (PLAY_W - 68);
+      const vx = (Math.random() - 0.5) * 150;
+      const vy = 150 + Math.random() * 90;
+      enemies.push(spawnShardFromEdge('top', x, null, { isElite: false, vx, vy }));
+    }
+    const pushed = this._queueClimaxEnemies('swarmBurst', enemies);
+    if (pushed && typeof shards !== 'undefined') shards.spawnTimer = 0;
+    return pushed;
+  },
+
+  _spawnClimaxEliteEscort() {
+    if (typeof spawnShardFromEdge !== 'function') return false;
+    const cx = PLAY_X + PLAY_W * (0.34 + Math.random() * 0.32);
+    const wingmen = 3 + Math.floor(Math.random() * 2);
+    const enemies = [
+      spawnShardFromEdge('top', cx, null, { isElite: true, vx: 0, formationDelay: 120 }),
+    ];
+    for (let i = 0; i < wingmen; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const rank = Math.floor(i / 2) + 1;
+      const dx = side * (58 + rank * 42);
+      enemies.push(spawnShardFromEdge('top', cx + dx, null, {
+        isElite: false,
+        vx: side * -26,
+        formationDelay: 80 + i * 60,
+      }));
+    }
+    return this._queueClimaxEnemies('eliteEscort', enemies);
+  },
+
+  _spawnClimaxColumnTrain() {
+    if (typeof spawnShardFromEdge !== 'function') return false;
+    const targetX = drone.x + (Math.random() - 0.5) * PLAY_W * 0.22;
+    const x = Math.max(PLAY_X + 36, Math.min(PLAY_X + PLAY_W - 36, targetX));
+    const enemies = [];
+    for (let i = 0; i < 5; i++) {
+      enemies.push(spawnShardFromEdge('top', x, null, {
+        isElite: false,
+        formationDelay: i * 200,
+      }));
+    }
+    return this._queueClimaxEnemies('columnTrain', enemies);
+  },
+
+  _spawnClimaxCrossfire() {
+    if (typeof spawnTurret !== 'function') return false;
+    const left = spawnTurret(1);
+    const right = spawnTurret(3);
+    left.x = PLAY_X + PLAY_W * 0.22;
+    right.x = PLAY_X + PLAY_W * 0.78;
+    left.lockY = PLAY_Y + PLAY_H * 0.24;
+    right.lockY = PLAY_Y + PLAY_H * 0.36;
+    return this._queueClimaxEnemies('crossfire', [left, right]);
+  },
+
+  _spawnClimaxShieldCluster() {
+    if (typeof spawnShieldDrone !== 'function' || typeof spawnShardFromEdge !== 'function') return false;
+    const cx = PLAY_X + PLAY_W * (0.32 + Math.random() * 0.36);
+    const protectees = [-48, 0, 48].map((dx, i) => spawnShardFromEdge('top', cx + dx, null, {
+      isElite: i === 1,
+      vx: dx * -0.18,
+      formationDelay: i * 90,
+    }));
+    const drones = [spawnShieldDrone(), spawnShieldDrone()];
+    drones.forEach((droneEnemy, i) => {
+      const target = protectees[Math.min(i, protectees.length - 1)];
+      droneEnemy.x = Math.max(PLAY_X + 24, Math.min(PLAY_X + PLAY_W - 24, cx + (i === 0 ? -72 : 72)));
+      droneEnemy.y = PLAY_Y - 16 - i * 10;
+      droneEnemy.supportTarget = target;
+      target.isShieldProtected = true;
+    });
+    return this._queueClimaxEnemies('shieldCluster', [...protectees, ...drones]);
+  },
+
+  _spawnClimaxPincer() {
+    if (typeof spawnShardFromEdge !== 'function') return false;
+    const enemies = [];
+    [0.18, 0.30, 0.42].forEach((yFrac, i) => {
+      const y = PLAY_Y + PLAY_H * yFrac;
+      enemies.push(spawnShardFromEdge('left', null, y, { isElite: false, formationDelay: i * 80 }));
+      enemies.push(spawnShardFromEdge('right', null, y + PLAY_H * 0.035, { isElite: false, formationDelay: i * 80 }));
+    });
+    return this._queueClimaxEnemies('pincer', enemies);
+  },
+
+  _fireStage10ClimaxEvent(entry) {
+    if (entry.type === 'callout') {
+      streakCallout.show(entry.text, entry.color, entry.duration, entry.scale, entry.zone);
+      return true;
+    }
+    if (entry.type === 'shake') {
+      this._startShake(entry.duration, entry.intensity);
+      return true;
+    }
+    if (entry.type === 'kamikazePack') return this._spawnClimaxKamikazePack();
+    if (entry.type === 'swarmBurst') return this._spawnClimaxSwarmBurst();
+    if (entry.type === 'eliteEscort') return this._spawnClimaxEliteEscort();
+    if (entry.type === 'columnTrain') return this._spawnClimaxColumnTrain();
+    if (entry.type === 'crossfire') return this._spawnClimaxCrossfire();
+    if (entry.type === 'shieldCluster') return this._spawnClimaxShieldCluster();
+    if (entry.type === 'pincer') return this._spawnClimaxPincer();
+    return false;
+  },
+
+  _dispatchStage10Climax() {
+    if (this.current !== 10 || typeof STAGE_10_CLIMAX === 'undefined') return;
+    const firstStart = STAGE_10_CLIMAX[0]?.t ?? Infinity;
+    if (!this.climaxActive && this.elapsedMs >= firstStart) this.climaxActive = true;
+    for (let i = 0; i < STAGE_10_CLIMAX.length; i++) {
+      if (this.climaxFired.has(i)) continue;
+      const entry = STAGE_10_CLIMAX[i];
+      if (this.elapsedMs >= entry.t) {
+        this.climaxFired.add(i);
+        this._fireStage10ClimaxEvent(entry);
+      }
+    }
   },
 
   _isObstacleStage() {
@@ -155,12 +332,34 @@ const stage = {
     }
     this.current++;
     audio.play('stageAdvance');
+    this.stageSplashTimer = this.STAGE_SPLASH_MS;
+    this.stageSplashNum = this.current;
     this.kills = 0;
     this.timer = STAGE_DURATION;
-    // Remove any live jackpot and arm a new one for the incoming stage
+    this.elapsedMs = 0;
+    this.climaxActive = false;
+    this.climaxFired = new Set();
+    // Remove any live jackpot and reset the meter for the incoming stage
+    for (const s of shards.pool) {
+      if (s.isJackpot) {
+        if (s.jackpotHeartbeatActive) {
+          audio.stopLoop('jackpotHeartbeatLoop');
+          s.jackpotHeartbeatActive = false;
+        }
+        window.__TD_LEDGER__?.markRemoved(s, 'stageAdvance');
+        shards._destroyEntityGfx?.(s);
+      }
+    }
     shards.pool = shards.pool.filter(s => !s.isJackpot);
     shards.jackpotSpawned = false;
     shards.jackpotSpawnAt = 5000 + Math.random() * 20000;
+    shards.jackpotMeter = 0;
+    shards.jackpotMeterTellShown = false;
+    shards.jackpotPendingEdge = null;
+    shards.jackpotPendingTimer = 0;
+    shards.jackpotShimmerEdge = null;
+    shards.jackpotShimmerTimer = 0;
+    shards.jackpotShimmerDuration = 0;
     COLOR_BG = STAGE_BG_COLORS[this.current - 1];
     pixiPost.setStage(this.current);
 
@@ -180,9 +379,17 @@ const stage = {
 
   update(delta) {
     if (this.flashTimer > 0) this.flashTimer -= delta;
+    if (this.stageSplashTimer > 0) this.stageSplashTimer = Math.max(0, this.stageSplashTimer - delta);
     if (this.shakeTimer > 0) {
       this.shakeTimer -= delta;
-      this.shakeIntensity = 8 * (this.shakeTimer / 1500);
+      const duration = this.shakeDuration || 1500;
+      const baseIntensity = this.shakeDuration ? this.shakeBaseIntensity : 8;
+      this.shakeIntensity = Math.max(0, baseIntensity * (this.shakeTimer / duration));
+      if (this.shakeTimer <= 0) {
+        this.shakeTimer = 0;
+        this.shakeDuration = 0;
+        this.shakeIntensity = 0;
+      }
     }
     if (this.slowmoTimer > 0) this.slowmoTimer -= delta;
 
@@ -200,6 +407,8 @@ const stage = {
         }
       }
       this.timer -= delta;
+      this.elapsedMs = Math.max(0, STAGE_DURATION - this.timer);
+      this._dispatchStage10Climax();
       if (this.timer <= 0) this._advance();
     }
 
@@ -230,8 +439,13 @@ const stage = {
     this.kills = 0;
     this.totalKills = 0;
     this.timer = STAGE_DURATION;
+    this.elapsedMs = 0;
     this.flashTimer = 0;
+    this.stageSplashTimer = 0;
+    this.stageSplashNum = 0;
     this.shakeTimer = 0;
+    this.shakeDuration = 0;
+    this.shakeBaseIntensity = 8;
     this.shakeIntensity = 0;
     this.slowmoTimer = 0;
     this.labelScale = 1;
@@ -243,6 +457,8 @@ const stage = {
     this.obstacleTriggered = false;
     this.finaleActive = false;
     this.finaleClearDelay = 0;
+    this.climaxActive = false;
+    this.climaxFired = new Set();
     COLOR_BG = STAGE_BG_COLORS[0];
     pixiPost.setStage(1);
     pixiPost.setFlowState(false);

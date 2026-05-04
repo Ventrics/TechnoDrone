@@ -1,0 +1,10 @@
+{
+  "name": "technodrone",
+  "private": true,
+  "version": "1.0.0",
+  "description": "TechnoDrone static portfolio build",
+  "scripts": {
+    "start": "node scripts/serve-static.mjs",
+    "dev": "npm run start"
+  }
+}

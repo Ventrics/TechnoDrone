@@ -1,0 +1,16 @@
+{
+  "name": "stage5-density",
+  "description": "Conservative stage 5 density pass: eases sustained crowding and turret/formation overlap without adding or removing mechanics.",
+  "stageConfig": [
+    {
+      "stage": 5,
+      "maxEnemies": 18,
+      "spawnInterval": 420,
+      "turretInterval": 7600,
+      "formationInterval": 4500
+    }
+  ],
+  "player": {},
+  "dash": {},
+  "flowState": {}
+}

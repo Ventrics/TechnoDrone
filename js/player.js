@@ -4,10 +4,6 @@ function _pixi_playerLayer() {
   return (typeof pixiPost !== 'undefined' && typeof pixiPost.getPlayerLayer === 'function')
     ? pixiPost.getPlayerLayer() : null;
 }
-function _pixi_fxLayerP() {
-  return (typeof pixiPost !== 'undefined' && typeof pixiPost.getFxLayer === 'function')
-    ? pixiPost.getFxLayer() : null;
-}
 
 const dash = {
   cooldown: 0,
@@ -79,6 +75,8 @@ const drone = {
   init() {
     this.x = PLAY_X + PLAY_W / 2;
     this.y = PLAY_Y + PLAY_H - 60;
+    this.prevX = this.x;
+    this.prevY = this.y;
     this._renderX = this.x;
     this._renderY = this.y;
     this._renderTilt = this.tilt;
@@ -121,6 +119,9 @@ const drone = {
   update(delta) {
     const dt = delta / 1000;
     let dx = 0;
+
+    this.prevX = this.x;
+    this.prevY = this.y;
 
     if (tutorialAllowsControl('move')) {
       if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= 1;
@@ -197,7 +198,7 @@ const drone = {
       (dashActive ? 0.28 : 0) +
       (player.flowStateActive ? 0.32 : 0)
     );
-    const panelColor = player.overheated ? '#ff6633'
+    const panelColor = player.overheated ? '#ff0000'
       : nearDeath ? '#ff3300'
       : player.flowStateActive ? '#d94cff'
       : COLOR_CYAN;
@@ -235,7 +236,7 @@ const drone = {
       const exhaustCI = _hexIntP(exhaustColor);
       const exhaustLen = 10 + engineDrive * 18;
 
-      [{ x: -13, y: -5 }, { x: -13, y: 5 }].forEach(ep => {
+      [{ x: -5, y: -8 }, { x: -5, y: 8 }].forEach(ep => {
         // Exhaust trail
         g.lineStyle(1 + engineDrive * 0.7, panelCI, (0.14 + engineDrive * 0.16));
         g.moveTo(ep.x - 2, ep.y);
@@ -259,13 +260,13 @@ const drone = {
         // Overheat flame shapes
         if (player.overheated) {
           const fp = 0.55 + 0.45 * (Math.sin(now * 0.024 + ep.y * 0.4) * 0.5 + 0.5);
-          g.beginFill(0xff3300, 0.28 + fp * 0.22);
+          g.beginFill(0xff0000, 0.28 + fp * 0.22);
           g.moveTo(ep.x - 10, ep.y);
           g.quadraticCurveTo(ep.x - 22 - fp * 12, ep.y - 4.5, ep.x - 30 - fp * 12, ep.y);
           g.quadraticCurveTo(ep.x - 22 - fp * 10, ep.y + 4.5, ep.x - 10, ep.y);
           g.closePath();
           g.endFill();
-          g.beginFill(0xff8800, 0.5 + fp * 0.18);
+          g.beginFill(0xff3333, 0.5 + fp * 0.18);
           g.moveTo(ep.x - 9, ep.y);
           g.quadraticCurveTo(ep.x - 18 - fp * 8, ep.y - 2.8, ep.x - 24 - fp * 8, ep.y);
           g.quadraticCurveTo(ep.x - 18 - fp * 7, ep.y + 2.8, ep.x - 9, ep.y);
@@ -275,74 +276,61 @@ const drone = {
       });
     }
 
-    // ── Hull (4-pass polygon) ─────────────────────────────────────────────────
+    // ── Hull (chevron — single polygon with nested glow stack) ───────────────
     {
       const g = this._gHull; g.clear();
       const hull = [
-        { x: 26, y: 0 }, { x: -4, y: -15 }, { x: -14, y: -6 },
-        { x: -12, y: 0 }, { x: -14, y: 6 },  { x: -4, y: 15 },
+        { x:  16, y:   0 }, // apex (nose)
+        { x: -10, y: -17 }, // top wing
+        { x:  -1, y:   0 }, // V notch
+        { x: -10, y:  17 }, // bottom wing
       ];
       const hullFlat = hull.flatMap(p => [p.x, p.y]);
       const cyanCI = _hexIntP(COLOR_CYAN);
+      const hullPulse = 0.85 + 0.15 * Math.sin(now * 0.005);
 
-      // Pass 1: dim fill (no stroke)
+      // Outer halo bloom
       g.lineStyle(0);
-      g.beginFill(cyanCI, 0.06 * hullFlicker);
+      g.beginFill(cyanCI, 0.10 * hullPulse * hullFlicker);
       g.drawPolygon(hullFlat);
       g.endFill();
 
-      // Pass 2: wide corona stroke (no fill)
-      g.lineStyle(3, cyanCI, 0.28 * hullFlicker);
+      // Wide corona stroke
+      g.lineStyle(4.4, cyanCI, 0.45 * hullPulse * hullFlicker);
       g.drawPolygon(hullFlat);
 
-      // Pass 3: mid stroke
-      g.lineStyle(1.2, cyanCI, 0.65 * hullFlicker);
+      // Mid stroke
+      g.lineStyle(2.0, cyanCI, 0.92 * hullFlicker);
       g.drawPolygon(hullFlat);
 
-      // Pass 4: white cap
-      g.lineStyle(0.6, 0xffffff, hullFlicker);
+      // Crisp white core
+      g.lineStyle(0.9, 0xffffff, hullFlicker);
       g.drawPolygon(hullFlat);
     }
 
-    // ── Flow state outer bloom stroke ─────────────────────────────────────────
+    // ── Flow state outer bloom stroke (triple layer: wide corona + primary + hot inner) ─
     {
       const g = this._gFlow; g.clear();
       if (player.flowStateActive) {
-        const hullF = [26,0, -4,-15, -14,-6, -12,0, -14,6, -4,15];
+        const hullF = [16, 0, -10, -17, -1, 0, -10, 17];
         const odPulse = 0.6 + 0.4 * (Math.sin(now * 0.018) * 0.5 + 0.5);
-        g.lineStyle(5, 0xcc44ff, 0.35 * odPulse * hullFlicker);
+        const actBoost = player.flowStateActivationFlash > 0
+          ? Math.pow(player.flowStateActivationFlash / 420, 1.2) : 0;
+        // Wide violet corona
+        g.lineStyle(10, 0xa855f7, (0.16 + actBoost * 0.35) * odPulse * hullFlicker);
+        g.drawPolygon(hullF);
+        // Primary magenta bloom
+        g.lineStyle(5, 0xcc44ff, (0.42 + actBoost * 0.3) * odPulse * hullFlicker);
+        g.drawPolygon(hullF);
+        // Hot inner stroke
+        g.lineStyle(2, 0xe040fb, (0.65 + actBoost * 0.3) * odPulse * hullFlicker);
         g.drawPolygon(hullF);
       }
     }
 
-    // ── Panel lines + near-death scars ────────────────────────────────────────
-    {
-      const g = this._gPanel; g.clear();
-      const pinkCI = _hexIntP(COLOR_PINK);
-      g.lineStyle(0.75, pinkCI, 0.38);
-      g.moveTo(20, 0); g.lineTo(-3, -8);
-      g.moveTo(20, 0); g.lineTo(-3, 8);
-      g.moveTo(-3, -8); g.lineTo(-3, 8);
-
-      g.lineStyle(0.85, panelCI, (0.14 + engineDrive * 0.12) * hullFlicker);
-      g.moveTo(12, 0); g.lineTo(-9, 0);
-      g.moveTo(5, -8); g.lineTo(-10, -4);
-      g.moveTo(5, 8); g.lineTo(-10, 4);
-    }
-
-    {
-      const g = this._gNearDeath; g.clear();
-      if (nearDeath) {
-        g.lineStyle(0.8, 0xff2200, 0.4 * hullFlicker);
-        // Dashed scarring — approximate with short line segments
-        g.moveTo(8, -3); g.lineTo(11, -1); // gap
-        g.moveTo(12, 0); g.lineTo(14, 2);
-        g.moveTo(6, 3); g.lineTo(9, 1);
-        g.moveTo(10, -1.5); g.lineTo(11, -1);
-        g.moveTo(-2, -1); g.lineTo(1, 1);
-        g.moveTo(2, 2); g.lineTo(4, 4);
-      }
-    }
+    // (Panel-line and near-death-scar blocks removed — chevron uses a single shape)
+    if (this._gPanel) this._gPanel.clear();
+    if (this._gNearDeath) this._gNearDeath.clear();
 
     // ── Heat arc + flow timer ring ────────────────────────────────────────────
     {
@@ -400,18 +388,18 @@ const drone = {
       }
       const tipCI = _hexIntP(tipColor);
       // Outer glow
-      g.beginFill(tipCI, 0.18); g.drawCircle(26, 0, 6); g.endFill();
+      g.beginFill(tipCI, 0.18); g.drawCircle(20, 0, 6); g.endFill();
       // Bright core
-      g.beginFill(tipCI, 0.5); g.drawCircle(26, 0, 3.5); g.endFill();
+      g.beginFill(tipCI, 0.5); g.drawCircle(20, 0, 3.5); g.endFill();
       // White hot
-      g.beginFill(0xffffff, 1); g.drawCircle(26, 0, 1.6); g.endFill();
+      g.beginFill(0xffffff, 1); g.drawCircle(20, 0, 1.6); g.endFill();
 
       // Flow state wing gun glow points
       if (player.flowStateActive) {
         const wPulse = 0.5 + 0.5 * (Math.sin(now * 0.022) * 0.5 + 0.5);
-        [-14, 14].forEach(wy => {
-          g.beginFill(tipCI, 0.18 * wPulse); g.drawCircle(14, wy, 5); g.endFill();
-          g.beginFill(tipCI, 0.55 * wPulse); g.drawCircle(14, wy, 2.8); g.endFill();
+        [-10, 10].forEach(wy => {
+          g.beginFill(tipCI, 0.18 * wPulse); g.drawCircle(2, wy, 5); g.endFill();
+          g.beginFill(tipCI, 0.55 * wPulse); g.drawCircle(2, wy, 2.8); g.endFill();
           g.beginFill(0xffffff, 1); g.drawCircle(14, wy, 1.2); g.endFill();
         });
       }
@@ -423,8 +411,7 @@ const drone = {
       if (dashActive) {
         const ghostIntensity = Math.pow(Math.max(0, 1 - dashPhase * 1.4), 1.2);
         const ghostHull = [
-          { x: 22, y: 0 }, { x: -5, y: -14 }, { x: -14, y: -7 },
-          { x: -10, y: 0 }, { x: -14, y: 7 },  { x: -5, y: 14 },
+          { x: 16, y: 0 }, { x: -10, y: -17 }, { x: -1, y: 0 }, { x: -10, y: 17 },
         ];
         const cosR  = Math.cos(-Math.PI / 2 + this.tilt);
         const sinR  = Math.sin(-Math.PI / 2 + this.tilt);
@@ -487,7 +474,7 @@ const drone = {
       (dashActive ? 0.28 : 0) +
       (player.flowStateActive ? 0.32 : 0)
     );
-    const panelColor   = player.overheated ? '#ff6633'
+    const panelColor   = player.overheated ? '#ff0000'
       : nearDeath ? '#ff3300'
       : player.flowStateActive ? '#d94cff'
       : COLOR_CYAN;
@@ -521,7 +508,7 @@ const drone = {
     }
 
     const ePulse = (0.55 + 0.45 * Math.sin(now * 0.008 + this.rotorAngle * 0.5)) * (0.7 + engineDrive * 0.7);
-    [{ x: -13, y: -5 }, { x: -13, y: 5 }].forEach(ep => {
+    [{ x: -5, y: -8 }, { x: -5, y: 8 }].forEach(ep => {
       ctx.save();
       const exhaustLen = 10 + engineDrive * 18;
       ctx.globalAlpha = 0.14 + engineDrive * 0.16;
@@ -592,13 +579,12 @@ const drone = {
       }
     });
 
+    // Chevron hull — single polygon: apex (nose, +X) → top wing → V notch → bottom wing
     const hull = [
-      { x: 26, y: 0 },
-      { x: -4, y: -15 },
-      { x: -14, y: -6 },
-      { x: -12, y: 0 },
-      { x: -14, y: 6 },
-      { x: -4, y: 15 },
+      { x:  16, y:   0 },
+      { x: -10, y: -17 },
+      { x:  -1, y:   0 },
+      { x: -10, y:  17 },
     ];
     const tracePath = () => {
       ctx.beginPath();
@@ -606,89 +592,79 @@ const drone = {
       ctx.closePath();
     };
 
+    const hullPulse = 0.85 + 0.15 * Math.sin(now * 0.005);
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 12;
+
+    // Outer halo bloom
     tracePath();
-    ctx.globalAlpha = 0.06 * hullFlicker;
+    ctx.globalAlpha = 0.10 * hullPulse * hullFlicker;
+    ctx.shadowColor = COLOR_CYAN;
+    ctx.shadowBlur = 32;
     ctx.fillStyle = COLOR_CYAN;
     ctx.fill();
 
-    tracePath();
-    ctx.globalAlpha = 0.28 * hullFlicker;
-    ctx.shadowColor = COLOR_CYAN;
-    ctx.shadowBlur = 32;
-    ctx.strokeStyle = COLOR_CYAN;
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
+    // Dark interior
     tracePath();
     ctx.globalAlpha = 0.65 * hullFlicker;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+
+    // Wide corona stroke
+    tracePath();
+    ctx.globalAlpha = 0.45 * hullPulse * hullFlicker;
     ctx.shadowColor = COLOR_CYAN;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 22;
     ctx.strokeStyle = COLOR_CYAN;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 4.4;
     ctx.stroke();
 
+    // Mid stroke
+    tracePath();
+    ctx.globalAlpha = 0.92 * hullFlicker;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2.0;
+    ctx.stroke();
+
+    // Crisp white core
     tracePath();
     ctx.globalAlpha = hullFlicker;
-    ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 5;
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 0.6;
+    ctx.lineWidth = 0.9;
     ctx.stroke();
 
-    // Flow State ship ascension — outer magenta bloom layered on hull
+    // Flow State ship ascension — triple-layered magenta bloom (wide corona + primary + hot inner)
     if (player.flowStateActive) {
       const odPulse = 0.6 + 0.4 * (Math.sin(getNow() * 0.018) * 0.5 + 0.5);
+      const actBoost = player.flowStateActivationFlash > 0
+        ? Math.pow(player.flowStateActivationFlash / 420, 1.2) : 0;
+      // Wide violet corona — carries the outer bloom
       tracePath();
-      ctx.globalAlpha = 0.35 * odPulse * hullFlicker;
+      ctx.globalAlpha = (0.22 + actBoost * 0.35) * odPulse * hullFlicker;
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = 38;
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 9;
+      ctx.stroke();
+      // Primary magenta bloom
+      tracePath();
+      ctx.globalAlpha = (0.42 + actBoost * 0.3) * odPulse * hullFlicker;
       ctx.shadowColor = '#cc44ff';
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 22;
       ctx.strokeStyle = '#cc44ff';
       ctx.lineWidth = 5;
       ctx.stroke();
+      // Hot inner stroke for edge definition
+      tracePath();
+      ctx.globalAlpha = (0.65 + actBoost * 0.3) * odPulse * hullFlicker;
+      ctx.shadowColor = '#e040fb';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = '#e040fb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
-
-    ctx.globalAlpha = 0.38;
-    ctx.shadowColor = COLOR_PINK;
-    ctx.shadowBlur = 8;
-    ctx.strokeStyle = COLOR_PINK;
-    ctx.lineWidth = 0.75;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(20, 0); ctx.lineTo(-3, -8);
-    ctx.moveTo(20, 0); ctx.lineTo(-3, 8);
-    ctx.moveTo(-3, -8); ctx.lineTo(-3, 8);
-    ctx.stroke();
-
-    if (nearDeath) {
-      ctx.save();
-      ctx.globalAlpha = 0.4 * hullFlicker;
-      ctx.strokeStyle = '#ff2200';
-      ctx.lineWidth = 0.8;
-      ctx.setLineDash([2, 3]);
-      ctx.beginPath(); ctx.moveTo(8, -3); ctx.lineTo(14, 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(6, 3); ctx.lineTo(11, -1); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(4, 4); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-
-    ctx.save();
-    ctx.globalAlpha = (0.14 + engineDrive * 0.12) * hullFlicker;
-    ctx.shadowColor = panelColor;
-    ctx.shadowBlur = 10 + engineDrive * 10;
-    ctx.strokeStyle = panelColor;
-    ctx.lineWidth = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(12, 0);
-    ctx.lineTo(-9, 0);
-    ctx.moveTo(5, -8);
-    ctx.lineTo(-10, -4);
-    ctx.moveTo(5, 8);
-    ctx.lineTo(-10, 4);
-    ctx.stroke();
-    ctx.restore();
 
     // Heat arc around ship
     {
@@ -778,7 +754,7 @@ const drone = {
     ctx.shadowBlur = tipBase * 2.2;
     ctx.fillStyle = tipColor;
     ctx.beginPath();
-    ctx.arc(26, 0, 6, 0, Math.PI * 2);
+    ctx.arc(20, 0, 6, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 0.5;
@@ -786,7 +762,7 @@ const drone = {
     ctx.shadowBlur = tipBase;
     ctx.fillStyle = tipColor;
     ctx.beginPath();
-    ctx.arc(26, 0, 3.5, 0, Math.PI * 2);
+    ctx.arc(20, 0, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 1;
@@ -794,25 +770,25 @@ const drone = {
     ctx.shadowBlur = 6;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(26, 0, 1.6, 0, Math.PI * 2);
+    ctx.arc(20, 0, 1.6, 0, Math.PI * 2);
     ctx.fill();
 
     // Flow state dual wing gun glow points — match bullet spawn positions
     if (player.flowStateActive) {
       const wPulse = 0.5 + 0.5 * (Math.sin(now * 0.022) * 0.5 + 0.5);
-      [-14, 14].forEach(wy => {
+      [-10, 10].forEach(wy => {
         ctx.globalAlpha = 0.18 * wPulse;
         ctx.shadowColor = tipColor;
         ctx.shadowBlur = 18;
         ctx.fillStyle = tipColor;
         ctx.beginPath();
-        ctx.arc(14, wy, 5, 0, Math.PI * 2);
+        ctx.arc(2, wy, 5, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.globalAlpha = 0.55 * wPulse;
         ctx.shadowBlur = 10;
         ctx.beginPath();
-        ctx.arc(14, wy, 2.8, 0, Math.PI * 2);
+        ctx.arc(2, wy, 2.8, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.globalAlpha = 1;
@@ -820,7 +796,7 @@ const drone = {
         ctx.shadowBlur = 5;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(14, wy, 1.2, 0, Math.PI * 2);
+        ctx.arc(2, wy, 1.2, 0, Math.PI * 2);
         ctx.fill();
       });
     }
@@ -833,8 +809,7 @@ const drone = {
     if (dashActive) {
       const ghostIntensity = Math.pow(Math.max(0, 1 - dashPhase * 1.4), 1.2);
       const ghostHull = [
-        { x: 22, y: 0 }, { x: -5, y: -14 }, { x: -14, y: -7 },
-        { x: -10, y: 0 }, { x: -14, y: 7 },  { x: -5, y: 14 },
+        { x: 16, y: 0 }, { x: -10, y: -17 }, { x: -1, y: 0 }, { x: -10, y: 17 },
       ];
       for (let g = 1; g <= 4; g++) {
         const trailOffset = g * 18;
@@ -865,7 +840,7 @@ const drone = {
         ctx.globalAlpha = (0.18 / g) * ghostIntensity;
         ctx.fillStyle = '#9be7ff';
         ctx.beginPath();
-        ctx.arc(12, 0, 4.5, 0, Math.PI * 2);
+        ctx.arc(10, 0, 4.5, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.shadowBlur = 0;
@@ -986,7 +961,7 @@ const player = {
       this.deathMessage = isHighScore
         ? 'LETS GOOOOOO'
         : DEATH_TAUNTS[Math.floor(Math.random() * DEATH_TAUNTS.length)];
-      recordRunResult(this.score, stage.totalKills);
+      recordRunResult(this.score, stage.totalKills, stage.current, false);
       if (typeof pixiPost !== 'undefined' && typeof pixiPost.triggerDeath === 'function') {
         pixiPost.triggerDeath();
       }

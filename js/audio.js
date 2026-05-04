@@ -3,6 +3,17 @@
 // Generates all sounds procedurally. Defines 'audio' global.
 
 window.audio = (function() {
+  // Bot-mode guard: skip audio init + expose no-op stubs so game code calls are cheap.
+  if (window.__TD_BOT_MODE__ === true) {
+    const noop = function() {};
+    return {
+      init: noop, play: noop, startLoop: noop, stopLoop: noop,
+      playMusic: noop, stopMusic: noop, updateMusicIntensity: noop,
+      setMasterVolume: noop, setSfxVolume: noop, setMusicVolume: noop,
+      toggleMute: function() { return false; },
+      get isMuted() { return true; }
+    };
+  }
   let ctx = null;
   let masterGain, sfxGain, musicGain;
   let isMuted = false;
@@ -76,10 +87,10 @@ window.audio = (function() {
     }
 
     // Load WAV files using Audio element pools (works on file://)
-    _loadPool('shoot', 'sounds/shoot.wav', 4);
+    _loadPool('shoot', 'assets/audio/shoot.wav', 4);
 
     // Commissioned soundtrack — routed through Web Audio graph for unified processing
-    _bgmEl = new Audio('Techno Drone V1 Master Chain .mp3');
+    _bgmEl = new Audio('assets/audio/game-soundtrack.mp3');
     _bgmEl.loop = true;
     _bgmEl.preload = 'auto';
     _bgmEl.load();
@@ -349,7 +360,78 @@ window.audio = (function() {
     turretFire: () => [
       createNoise((g,t)=>{ g.setValueAtTime(0.1, t); g.exponentialRampToValueAtTime(0.01, t+0.06); }, 0.06),
       createOsc('sine', 700, (g,t)=>{ g.setValueAtTime(0.08, t); g.exponentialRampToValueAtTime(0.01, t+0.04); }, 0.04)
-    ]
+    ],
+
+    // Jackpot — slot machine fantasy in OLED-translated synth voices
+    jackpotTell: () => createOsc('sine', 80, (g,t)=>{
+      g.setValueAtTime(0, t);
+      g.linearRampToValueAtTime(0.16, t+0.5);
+      g.linearRampToValueAtTime(0, t+1.5);
+    }, 1.5, 280, 1.5),
+    jackpotSpawn: () => {
+      [523, 659, 784].forEach((freq, i) => {
+        setTimeout(() => {
+          if (!ctx) return;
+          const n = createOsc('sine', freq, (g,t)=>{
+            g.setValueAtTime(0.18, t);
+            g.exponentialRampToValueAtTime(0.01, t+0.22);
+          }, 0.22);
+          if (n) setTimeout(() => n.cleanup(), 320);
+        }, i * 80);
+      });
+      return [];
+    },
+    jackpotBounce: () => createOsc('triangle', 1400, (g,t)=>{
+      g.setValueAtTime(0.05, t);
+      g.exponentialRampToValueAtTime(0.01, t+0.04);
+    }, 0.04, 800, 0.03),
+    nearMissClink: () => [
+      createOsc('triangle', 2400, (g,t)=>{ g.setValueAtTime(0.10, t); g.exponentialRampToValueAtTime(0.01, t+0.06); }, 0.06),
+      createOsc('sine', 3200, (g,t)=>{ g.setValueAtTime(0.06, t); g.exponentialRampToValueAtTime(0.01, t+0.04); }, 0.04)
+    ],
+    jackpotHit: () => createOsc('sine', 1200, (g,t)=>{
+      g.setValueAtTime(0.08, t);
+      g.exponentialRampToValueAtTime(0.01, t+0.05);
+    }, 0.05, 600, 0.04),
+    jackpotKill: () => {
+      // Ascending arpeggio
+      [659, 784, 988, 1175, 1568].forEach((freq, i) => {
+        setTimeout(() => {
+          if (!ctx) return;
+          const n = createOsc('sine', freq, (g,t)=>{
+            g.setValueAtTime(0.16, t);
+            g.exponentialRampToValueAtTime(0.01, t+0.35);
+          }, 0.35);
+          if (n) setTimeout(() => n.cleanup(), 480);
+        }, i * 55);
+      });
+      // Bell stack — sustained triad after the run
+      setTimeout(() => {
+        [1047, 1319, 1568].forEach(freq => {
+          if (!ctx) return;
+          const n = createOsc('sine', freq, (g,t)=>{
+            g.setValueAtTime(0.10, t);
+            g.exponentialRampToValueAtTime(0.01, t+0.75);
+          }, 0.75);
+          if (n) setTimeout(() => n.cleanup(), 900);
+        });
+      }, 300);
+      return [];
+    },
+    jackpotCashOut: () => {
+      // Descending minor 3-tone — slot machine "you missed it" sting
+      [659, 523, 440].forEach((freq, i) => {
+        setTimeout(() => {
+          if (!ctx) return;
+          const n = createOsc('sine', freq, (g,t)=>{
+            g.setValueAtTime(0.12, t);
+            g.exponentialRampToValueAtTime(0.01, t+0.35);
+          }, 0.35);
+          if (n) setTimeout(() => n.cleanup(), 450);
+        }, i * 180);
+      });
+      return [];
+    },
   };
 
   function play(name) {
@@ -455,6 +537,38 @@ window.audio = (function() {
           lfoGain.disconnect();
           gainNode.disconnect();
         }, 140);
+      };
+    }
+
+    if (name === 'jackpotHeartbeatLoop') {
+      // 120 BPM heartbeat thump — short low sub kick, ramps up gently as it loops.
+      let stopped = false;
+      let beatCount = 0;
+      const beat = () => {
+        if (stopped || !ctx) return;
+        beatCount++;
+        const t = ctx.currentTime;
+        // Volume fades in over the first ~6 beats so the entrance isn't jarring.
+        const vol = Math.min(0.20, 0.06 + beatCount * 0.025);
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(85, t);
+        osc.frequency.exponentialRampToValueAtTime(38, t + 0.14);
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0, t);
+        gainNode.gain.linearRampToValueAtTime(vol, t + 0.012);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+        osc.connect(gainNode);
+        gainNode.connect(sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.20);
+        setTimeout(() => { try { osc.disconnect(); gainNode.disconnect(); } catch(e){} }, 280);
+      };
+      beat();
+      const intervalId = setInterval(beat, 500);
+      activeLoops[name] = () => {
+        stopped = true;
+        clearInterval(intervalId);
       };
     }
   }

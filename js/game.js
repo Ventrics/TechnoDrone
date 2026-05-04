@@ -71,30 +71,30 @@ function _drawNearDeathVignette() {
   ctx.clip();
 
   const left = ctx.createLinearGradient(PLAY_X, 0, PLAY_X + glowSize, 0);
-  left.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha})`);
-  left.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.45})`);
-  left.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  left.addColorStop(0, `rgba(255, 0, 50, ${edgeAlpha})`);
+  left.addColorStop(0.45, `rgba(220, 0, 40, ${edgeAlpha * 0.45})`);
+  left.addColorStop(1, 'rgba(180, 0, 30, 0)');
   ctx.fillStyle = left;
   ctx.fillRect(PLAY_X, PLAY_Y, glowSize, PLAY_H);
 
   const right = ctx.createLinearGradient(PLAY_X + PLAY_W, 0, PLAY_X + PLAY_W - glowSize, 0);
-  right.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha})`);
-  right.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.45})`);
-  right.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  right.addColorStop(0, `rgba(255, 0, 50, ${edgeAlpha})`);
+  right.addColorStop(0.45, `rgba(220, 0, 40, ${edgeAlpha * 0.45})`);
+  right.addColorStop(1, 'rgba(180, 0, 30, 0)');
   ctx.fillStyle = right;
   ctx.fillRect(PLAY_X + PLAY_W - glowSize, PLAY_Y, glowSize, PLAY_H);
 
   const top = ctx.createLinearGradient(0, PLAY_Y, 0, PLAY_Y + glowSize);
-  top.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha * 0.9})`);
-  top.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.38})`);
-  top.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  top.addColorStop(0, `rgba(255, 0, 50, ${edgeAlpha * 0.9})`);
+  top.addColorStop(0.45, `rgba(220, 0, 40, ${edgeAlpha * 0.38})`);
+  top.addColorStop(1, 'rgba(180, 0, 30, 0)');
   ctx.fillStyle = top;
   ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, glowSize);
 
   const bottom = ctx.createLinearGradient(0, PLAY_Y + PLAY_H, 0, PLAY_Y + PLAY_H - glowSize);
-  bottom.addColorStop(0, `rgba(164, 18, 40, ${edgeAlpha * 0.9})`);
-  bottom.addColorStop(0.45, `rgba(132, 16, 34, ${edgeAlpha * 0.38})`);
-  bottom.addColorStop(1, 'rgba(96, 12, 26, 0)');
+  bottom.addColorStop(0, `rgba(255, 0, 50, ${edgeAlpha * 0.9})`);
+  bottom.addColorStop(0.45, `rgba(220, 0, 40, ${edgeAlpha * 0.38})`);
+  bottom.addColorStop(1, 'rgba(180, 0, 30, 0)');
   ctx.fillStyle = bottom;
   ctx.fillRect(PLAY_X, PLAY_Y + PLAY_H - glowSize, PLAY_W, glowSize);
 
@@ -168,12 +168,6 @@ function _setPixiNativeLayer(layerName, enabled) {
   pixiPost.setNativeLayerEnabled(layerName, enabled);
 }
 
-function _isPixiNativeLayerEnabled(layerName) {
-  return typeof pixiPost !== 'undefined' &&
-    typeof pixiPost.isNativeLayerEnabled === 'function' &&
-    pixiPost.isNativeLayerEnabled(layerName);
-}
-
 function _syncPixiLayerModes() {
   _setPixiNativeLayer('bg', false);
   _setPixiNativeLayer('particles', false);
@@ -193,7 +187,7 @@ function startMissionCompleteScreen() {
   startScreenTransition('pixelate', () => {
     const finalScore = player.score;
     const finalKills = stage.totalKills;
-    recordRunResult(finalScore, finalKills);
+    recordRunResult(finalScore, finalKills, 10, true);
     submitLeaderboardRun(finalScore, finalKills);
     bullets.pool = [];
     bullets.cooldown = 0;
@@ -318,8 +312,8 @@ function _drawNegativeSpaceBackdrop() {
   ctx.drawImage(_negativeSpaceBackdrop, 0, 0);
   if (_negativeSpaceBackdropActive && _negativeSpaceFlowGlow > 0.001) {
     // Breathing: slow sin oscillation modulates intensity when fully active
-    const breathe = 0.08 * Math.sin(Date.now() * 0.0018) * _negativeSpaceFlowGlow;
-    ctx.globalAlpha = Math.max(0, Math.min(1, _negativeSpaceFlowGlow * 0.92 + breathe));
+    const breathe = 0.12 * Math.sin(Date.now() * 0.0018) * _negativeSpaceFlowGlow;
+    ctx.globalAlpha = Math.max(0, Math.min(1, _negativeSpaceFlowGlow * 0.88 + breathe));
     ctx.drawImage(_negativeSpaceBackdropActive, 0, 0);
     ctx.globalAlpha = 1;
   }
@@ -335,8 +329,10 @@ function update(delta) {
   if (gameState === 'title') { updateTitle(delta); return; }
   if (gameState === 'leaderboard') { leaderboard.update(delta); return; }
   if (gameState === 'nameEntry') { nameEntry.update(delta); return; }
+  if (gameState === 'devMenu') { return; }
   if (gameState === 'win') {
     starField.update(delta);
+    updateWinDust(delta);
     const winMove = ((keys['ArrowLeft'] || keys['a'] || keys['A']) ? -1 : 0) +
       ((keys['ArrowRight'] || keys['d'] || keys['D']) ? 1 : 0);
     const targetX = PLAY_X + PLAY_W * 0.5 + winMove * PLAY_W * 0.16;
@@ -347,6 +343,7 @@ function update(delta) {
   if (paused) { return; }
 
   if (player.dead) {
+    updateDeathDust(delta);
     return;
   }
 
@@ -382,11 +379,13 @@ function update(delta) {
       s.angle += s.spin;
       if (s.flashTimer > 0) s.flashTimer -= effectiveDelta;
       if (s.hpBarTimer > 0) s.hpBarTimer -= effectiveDelta;
-      return (
+      const alive = (
         s.x > PLAY_X - 80 &&
         s.x < PLAY_X + PLAY_W + 80 &&
         s.y < PLAY_Y + PLAY_H + 120
       );
+      if (!alive) window.__TD_LEDGER__?.markRemoved(s, 'tutorialOffScreen');
+      return alive;
     });
   } else {
     shards.update(effectiveDelta);
@@ -398,6 +397,7 @@ function update(delta) {
   impactFX.update(effectiveDelta);
   smokeParticles.update(effectiveDelta);
   pickups.update(effectiveDelta);
+  if (typeof reactiveGrid !== 'undefined') reactiveGrid.update(effectiveDelta);
   if (gameState === 'playing') {
     stage.update(delta);
     audio.updateMusicIntensity(stage.current);
@@ -464,6 +464,7 @@ function render() {
   // Play area background
   ctx.fillStyle = COLOR_BG;
   ctx.fillRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
+  if (typeof reactiveGrid !== 'undefined') reactiveGrid.draw();
   starField.draw();
   _drawPlayfieldFog();
 
@@ -474,74 +475,6 @@ function render() {
   ctx.strokeStyle = stageColorBorder;
   ctx.lineWidth = 1;
   ctx.strokeRect(PLAY_X, PLAY_Y, PLAY_W, PLAY_H);
-  ctx.restore();
-
-  const sideBarY = PLAY_Y + 10;
-  const sideBarH = PLAY_H - 20;
-  const odRailFrac = player.flowStateActive
-    ? player.flowStateTimer / player.FLOW_STATE_DURATION
-    : player.flowStateCharge / player.FLOW_STATE_MAX;
-  const odRailActive = player.flowStateActive;
-  const odRailColor = odRailActive ? '#e040fb' : '#8b5cf6';
-  const odRailPulse = odRailActive ? (0.72 + 0.28 * (Math.sin(getNow() * 0.022) * 0.5 + 0.5)) : 1;
-  ctx.save();
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = '#ffffff';
-  _roundRect(ctx, PLAY_X - 20, sideBarY, 12, sideBarH, 5);
-  ctx.fill();
-  if (odRailFrac > 0) {
-    const fillH = sideBarH * Math.max(0, Math.min(1, odRailFrac));
-    const fillY = sideBarY + sideBarH - fillH;
-    ctx.globalAlpha = odRailActive ? odRailPulse : 0.88;
-    setGlow(odRailColor, odRailActive ? 18 : 14);
-    ctx.fillStyle = odRailColor;
-    _roundRect(ctx, PLAY_X - 20, fillY, 12, fillH, 5);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 0.26;
-  ctx.fillStyle = '#ffffff';
-  _roundRect(ctx, PLAY_X - 16, sideBarY + 20, 2, Math.max(0, sideBarH - 40), 1);
-  ctx.fill();
-
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = '#ffffff';
-  _roundRect(ctx, PLAY_X + PLAY_W + 8, sideBarY, 12, sideBarH, 5);
-  ctx.fill();
-  if (odRailFrac > 0) {
-    const fillH = sideBarH * Math.max(0, Math.min(1, odRailFrac));
-    const fillY = sideBarY + sideBarH - fillH;
-    ctx.globalAlpha = odRailActive ? odRailPulse : 0.88;
-    setGlow(odRailColor, odRailActive ? 18 : 14);
-    ctx.fillStyle = odRailColor;
-    _roundRect(ctx, PLAY_X + PLAY_W + 8, fillY, 12, fillH, 5);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 0.26;
-  ctx.fillStyle = '#ffffff';
-  _roundRect(ctx, PLAY_X + PLAY_W + 12, sideBarY + 20, 2, Math.max(0, sideBarH - 40), 1);
-  ctx.fill();
-
-  const flowStateLetters = ['F', 'L', 'O', 'W', ' ', 'S', 'T', 'A', 'T', 'E'];
-  const flowStateTextX = PLAY_X - 38;
-  const flowStateStartY = PLAY_Y + 92;
-  const flowStateSpacing = 30;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold 38px ${UI_DISPLAY_FONT}`;
-  ctx.globalAlpha = odRailActive ? odRailPulse : 0.86;
-  ctx.shadowColor = odRailColor;
-  ctx.shadowBlur = odRailActive ? 18 : 12;
-  ctx.fillStyle = '#ffffff';
-  flowStateLetters.forEach((ch, idx) => {
-    ctx.fillText(ch, flowStateTextX, flowStateStartY + idx * flowStateSpacing);
-  });
-  ctx.globalAlpha = odRailActive ? 0.2 : 0.14;
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = odRailColor;
-  flowStateLetters.forEach((ch, idx) => {
-    ctx.fillText(ch, flowStateTextX, flowStateStartY + idx * flowStateSpacing - 1);
-  });
-  clearGlow();
   ctx.restore();
 
   // Flow State world-state: energized border + edge strips
@@ -567,107 +500,245 @@ function render() {
 
   }
 
-  // Top entry highlight bar — hidden in tutorial (no stage progression there)
-  if (gameState !== 'tutorial') {
+  // Top stage strip — single 10-segment bar, current segment fills with timer
   if (gameState !== 'tutorial' && gameState !== 'finale') {
     const timeFrac = Math.max(0, Math.min(1, stage.timer / STAGE_DURATION));
     const timeLeft = Math.max(0, Math.ceil(stage.timer / 1000));
     const timerUrgent = timeLeft <= 5;
     const timerWarning = timeLeft <= 10;
     const timerPulse = timerUrgent ? (0.72 + 0.28 * (Math.sin(getNow() * 0.025) * 0.5 + 0.5)) : 1;
-    const timerColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : stageColorBorder;
+    const fillFrac = 1 - timeFrac; // current segment fills as time elapses
+    const segCyan = '#31afd4';
+    const segCyanBright = '#7ce0ff';
+    const currentColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : segCyanBright;
+    const currentGlowColor = timerUrgent ? '#ff5a44' : timerWarning ? '#ff9a5f' : segCyan;
+
     ctx.save();
-    const topBarInset = Math.max(8, PLAY_W * 0.025);
-    const topBarX = PLAY_X + topBarInset;
-    const topBarY = PLAY_Y + 8;
-    const topBarW = PLAY_W - topBarInset * 2;
-    const topBarH = 7;
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(topBarX, topBarY, topBarW, topBarH);
+    const stripInset = Math.max(8, PLAY_W * 0.025);
+    const stripX = PLAY_X + stripInset;
+    const stripY = PLAY_Y + 8;
+    const stripW = PLAY_W - stripInset * 2;
+    const stripH = 8;
+    const segCount = 10;
+    const segGap = 3;
+    const segW = (stripW - segGap * (segCount - 1)) / segCount;
+    const cur = Math.min(stage.current, segCount);
 
-    if (timeFrac > 0) {
-      const fillW = topBarW * timeFrac;
-      ctx.globalAlpha = timerUrgent ? timerPulse : 0.92;
-      ctx.fillStyle = timerColor;
-      ctx.shadowColor = timerColor;
-      ctx.shadowBlur = timerUrgent ? 16 : 12;
-      ctx.fillRect(topBarX, topBarY, fillW, topBarH);
+    for (let i = 0; i < segCount; i++) {
+      const stageNum = i + 1;
+      const sx = stripX + i * (segW + segGap);
+      const isCurrent = stageNum === cur;
+      const isPast = stageNum < cur;
+
+      // Segment outline (always)
+      ctx.globalAlpha = isCurrent ? 0.65 : isPast ? 0.55 : 0.30;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = isCurrent ? currentGlowColor : segCyan;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx + 0.5, stripY + 0.5, segW - 1, stripH - 1);
+
+      if (isPast) {
+        // Solid filled past stage
+        ctx.globalAlpha = 0.65;
+        ctx.shadowColor = segCyan;
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = segCyan;
+        ctx.fillRect(sx + 1, stripY + 1, segW - 2, stripH - 2);
+      } else if (isCurrent) {
+        // Fractional fill driven by elapsed timer
+        const fw = (segW - 2) * fillFrac;
+        if (fw > 0) {
+          ctx.globalAlpha = timerUrgent ? timerPulse : 0.92;
+          ctx.shadowColor = currentGlowColor;
+          ctx.shadowBlur = timerUrgent ? 18 : 14;
+          ctx.fillStyle = currentColor;
+          ctx.fillRect(sx + 1, stripY + 1, fw, stripH - 2);
+        }
+      }
     }
-
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = '#ffffff';
     ctx.shadowBlur = 0;
-    ctx.fillRect(topBarX + 22, topBarY + 1, Math.max(0, topBarW - 44), 1);
-
-    const nextStageLabel = 'NEXT STAGE';
-    const labelX = topBarX + topBarW * 0.5;
-    const labelY = topBarY - 8;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.font = `bold 17px ${UI_DISPLAY_FONT}`;
-    ctx.globalAlpha = timerUrgent ? 0.98 : 0.82;
-    ctx.shadowColor = timerColor;
-    ctx.shadowBlur = timerUrgent ? 20 : 14;
-    ctx.fillStyle = timerColor;
-    ctx.fillText(nextStageLabel, labelX, labelY);
-    ctx.globalAlpha = timerUrgent ? 0.45 : 0.3;
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(nextStageLabel, labelX, labelY - 1);
     ctx.restore();
   }
+
+  // Cinematic stage-transition splash — center-screen "STAGE NN" pulse
+  if (stage.stageSplashTimer > 0 && gameState !== 'tutorial') {
+    const SPLASH_MS = stage.STAGE_SPLASH_MS || 1100;
+    const elapsed = SPLASH_MS - stage.stageSplashTimer;
+    const t = Math.max(0, Math.min(1, elapsed / SPLASH_MS));
+    // Phases: fade-in/scale-up 0-0.23, hold 0.23-0.68, fade-out 0.68-1.0
+    let alpha, scale;
+    if (t < 0.23) {
+      const p = t / 0.23;
+      const ease = 1 - Math.pow(1 - p, 3);
+      alpha = ease;
+      scale = 0.78 + 0.22 * ease;
+    } else if (t < 0.68) {
+      alpha = 1;
+      scale = 1.0;
+    } else {
+      const p = (t - 0.68) / 0.32;
+      alpha = 1 - p;
+      scale = 1.0 + 0.06 * p;
+    }
+    const cx = PLAY_X + PLAY_W * 0.5;
+    const cy = PLAY_Y + PLAY_H * 0.5;
+    const text = `STAGE ${String(stage.stageSplashNum || stage.current).padStart(2, '0')}`;
+    const baseSize = 88;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${baseSize}px ${TITLE_WORDMARK_FONT}`;
+    // Soft glow halo behind
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.shadowColor = '#fb29fd';
+    ctx.shadowBlur = 38;
+    ctx.fillStyle = '#fb29fd';
+    ctx.fillText(text, 0, 0);
+    // Crisp white core
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
   }
 
-  // Bottom flow state bar — mirrors top timer bar
+  // Flow State peripheral charge indicator — slanted cell, bottom-center of playfield
+  // Coords hoisted so the LASER label can anchor to the bar's right edge
+  const fsW = 320;
+  const fsH = 18;
+  const fsSkew = 10; // horizontal skew per side for slanted-cell look
+  const fsCx = PLAY_X + PLAY_W * 0.5;
+  const fsY = PLAY_Y + PLAY_H - 34;
+  const fsLeftX = fsCx - fsW * 0.5;
+
+  if (gameState !== 'tutorial') {
+    if (player.flowStateActive) {
+      // Active state: solid magenta burn-down timer (drains left→right)
+      const frac = Math.max(0, Math.min(1, player.flowStateTimer / player.FLOW_STATE_DURATION));
+
+      ctx.save();
+
+      // Outline
+      ctx.globalAlpha = 0.95;
+      ctx.shadowColor = '#fb29fd';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = '#ff5fff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(fsLeftX + fsSkew, fsY);
+      ctx.lineTo(fsLeftX + fsW, fsY);
+      ctx.lineTo(fsLeftX + fsW - fsSkew, fsY + fsH);
+      ctx.lineTo(fsLeftX, fsY + fsH);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Burn-down fill
+      if (frac > 0) {
+        const fillW = (fsW - 4) * frac;
+        if (fillW >= fsSkew + 2) {
+          ctx.globalAlpha = 0.92;
+          ctx.shadowColor = '#fb29fd';
+          ctx.shadowBlur = 10;
+          ctx.fillStyle = '#fb29fd';
+          ctx.beginPath();
+          ctx.moveTo(fsLeftX + fsSkew + 2, fsY + 2);
+          ctx.lineTo(fsLeftX + 2 + fillW, fsY + 2);
+          ctx.lineTo(fsLeftX + 2 + fillW - fsSkew, fsY + fsH - 2);
+          ctx.lineTo(fsLeftX + 2, fsY + fsH - 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    } else {
+      // Charging state: existing gradient + softened ready-pulse
+      const fsFrac = Math.max(0, Math.min(1, player.flowStateCharge / player.FLOW_STATE_MAX));
+      const fsFull = fsFrac >= 1;
+      const fsPulse = fsFull ? (0.89 + 0.11 * (Math.sin(getNow() * 0.018) * 0.5 + 0.5)) : 1;
+
+      ctx.save();
+
+      // Hairline outline (slanted parallelogram)
+      ctx.globalAlpha = fsFull ? 0.95 * fsPulse : 0.55;
+      ctx.shadowColor = fsFull ? '#fb29fd' : '#31afd4';
+      ctx.shadowBlur = fsFull ? 10 : 6;
+      ctx.strokeStyle = fsFull ? '#ff5fff' : '#7ce0ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(fsLeftX + fsSkew, fsY);
+      ctx.lineTo(fsLeftX + fsW, fsY);
+      ctx.lineTo(fsLeftX + fsW - fsSkew, fsY + fsH);
+      ctx.lineTo(fsLeftX, fsY + fsH);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Gradient fill (cyan -> magenta as charge climbs)
+      if (fsFrac > 0) {
+        const fillW = (fsW - 4) * fsFrac;
+        if (fillW >= fsSkew + 2) {
+          const grad = ctx.createLinearGradient(fsLeftX, 0, fsLeftX + fsW, 0);
+          grad.addColorStop(0, '#31afd4');
+          grad.addColorStop(0.55, '#7ce0ff');
+          grad.addColorStop(1, '#fb29fd');
+          ctx.globalAlpha = fsFull ? 0.92 * fsPulse : 0.85;
+          ctx.shadowColor = fsFull ? '#fb29fd' : '#31afd4';
+          ctx.shadowBlur = fsFull ? 9 : 8;
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(fsLeftX + fsSkew + 2, fsY + 2);
+          ctx.lineTo(fsLeftX + 2 + fillW, fsY + 2);
+          ctx.lineTo(fsLeftX + 2 + fillW - fsSkew, fsY + fsH - 2);
+          ctx.lineTo(fsLeftX + 2, fsY + fsH - 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // Bottom laser fuel bar — thin baseline strip, only renders when alt-fire active
   {
     const botBarInset = Math.max(8, PLAY_W * 0.025);
     const botBarX = PLAY_X + botBarInset;
     const botBarY = PLAY_Y + PLAY_H - 13;
     const botBarW = PLAY_W - botBarInset * 2;
-    const botBarH = 7;
+    const botBarH = 3;
 
     const altActive = !!player.altFireType;
     const altLabel = 'LASER';
     const altColor = '#39ff14';
     const altFrac = Math.max(0, player.laserFuel / player.LASER_MAX_FUEL);
-    const altPulse = altActive ? (0.76 + 0.24 * (Math.sin(getNow() * 0.02) * 0.5 + 0.5)) : 1;
-    const altBarY = botBarY;
-    const altLabelY = altBarY - 8;
 
     ctx.save();
     if (altActive) {
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = '#ffffff';
       ctx.shadowBlur = 0;
-      ctx.fillRect(botBarX, altBarY, botBarW, botBarH);
+      ctx.fillRect(botBarX, botBarY, botBarW, botBarH);
 
       if (altFrac > 0) {
         const altFillW = botBarW * altFrac;
-        ctx.globalAlpha = 0.92 * altPulse;
+        ctx.globalAlpha = 0.6;
         ctx.fillStyle = altColor;
         ctx.shadowColor = altColor;
-        ctx.shadowBlur = 16;
-        ctx.fillRect(botBarX, altBarY, altFillW, botBarH);
+        ctx.shadowBlur = 5;
+        ctx.fillRect(botBarX, botBarY, altFillW, botBarH);
       }
 
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowBlur = 0;
-      ctx.fillRect(botBarX + 22, altBarY + 1, Math.max(0, botBarW - 44), 1);
-
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.font = `bold 17px ${UI_DISPLAY_FONT}`;
+      // Small LASER label, anchored to the right of the FlowState bar
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold 11px ${UI_DISPLAY_FONT}`;
       ctx.globalAlpha = 0.88;
       ctx.shadowColor = altColor;
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 7;
       ctx.fillStyle = altColor;
-      ctx.fillText(altLabel, botBarX + botBarW * 0.5, altLabelY);
-      ctx.globalAlpha = 0.32;
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(altLabel, botBarX + botBarW * 0.5, altLabelY - 1);
+      ctx.fillText(altLabel, fsLeftX + fsW + 7, fsY + fsH * 0.5);
     }
 
     ctx.restore();
@@ -711,17 +782,51 @@ function render() {
 
   // Bloom is now handled by PixiJS GPU post-processing (pixi-post.js)
 
-  // Activation flash — brief full-canvas magenta pulse on Flow State start
+  // Activation burst — screen-edge rim pulse + soft center wash (premium moment)
   if (player.flowStateActivationFlash > 0) {
-    const t = Math.pow(player.flowStateActivationFlash / 420, 2);
+    const raw = player.flowStateActivationFlash / 420;
+    const t = Math.pow(raw, 1.6); // ease-out, strongest at activation
+    const edge = Math.max(90, Math.min(190, canvas.width * 0.115));
+    const rimA   = `rgba(204, 68, 255, ${0.70 * t})`;
+    const rimMid = `rgba(168, 85, 247, ${0.32 * t})`;
+    const rimEnd = 'rgba(88, 38, 196, 0)';
+
     ctx.save();
-    ctx.globalAlpha = t * 0.28;
+    // Left rim
+    const lGrad = ctx.createLinearGradient(0, 0, edge, 0);
+    lGrad.addColorStop(0, rimA);
+    lGrad.addColorStop(0.5, rimMid);
+    lGrad.addColorStop(1, rimEnd);
+    ctx.fillStyle = lGrad;
+    ctx.fillRect(0, 0, edge, canvas.height);
+    // Right rim
+    const rGrad = ctx.createLinearGradient(canvas.width, 0, canvas.width - edge, 0);
+    rGrad.addColorStop(0, rimA);
+    rGrad.addColorStop(0.5, rimMid);
+    rGrad.addColorStop(1, rimEnd);
+    ctx.fillStyle = rGrad;
+    ctx.fillRect(canvas.width - edge, 0, edge, canvas.height);
+    // Top rim
+    const tGrad = ctx.createLinearGradient(0, 0, 0, edge);
+    tGrad.addColorStop(0, rimA);
+    tGrad.addColorStop(0.5, rimMid);
+    tGrad.addColorStop(1, rimEnd);
+    ctx.fillStyle = tGrad;
+    ctx.fillRect(0, 0, canvas.width, edge);
+    // Bottom rim
+    const bGrad = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - edge);
+    bGrad.addColorStop(0, rimA);
+    bGrad.addColorStop(0.5, rimMid);
+    bGrad.addColorStop(1, rimEnd);
+    ctx.fillStyle = bGrad;
+    ctx.fillRect(0, canvas.height - edge, canvas.width, edge);
+    // Soft unifying center wash — much dimmer than the old flat flash
+    ctx.globalAlpha = t * 0.13;
     ctx.fillStyle = '#cc44ff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
 
-  drawCenterWatermark();
   pixiPost.setNearDeath(player.lives === 1 && !player.dead);
   drawHUD();
   streakCallout.draw();
@@ -915,8 +1020,9 @@ function _confirmNameEntry() {
 window.addEventListener('keydown', e => {
   if (gameState !== 'title') return;
   devKeyBuffer.push(e.key.toLowerCase());
-  if (devKeyBuffer.length > 3) devKeyBuffer.shift();
-  if (devKeyBuffer.join('') === 'dev') {
+  if (devKeyBuffer.length > 4) devKeyBuffer.shift();
+  const devCode = devKeyBuffer.join('');
+  if (devCode.endsWith('dev') || devCode.endsWith('devi')) {
     startScreenTransition('fade', () => {
       gameState = 'devMenu';
       devKeyBuffer = [];
@@ -935,13 +1041,95 @@ window.addEventListener('keydown', e => {
       audio.playMusic('title');
     });
   }
+  if (/^[1-9]$/.test(e.key)) devJumpToStage(parseInt(e.key, 10));
+  if (e.key === '0') devJumpToStage(10);
+  if (e.key === 'f' || e.key === 'F') {
+    devFastStage = !devFastStage;
+    audio.play('menuSelect');
+  }
+  if (e.key === 't' || e.key === 'T') startTutorialFromDevMenu();
+  if (e.key === 'g' || e.key === 'G') devPreviewScreen('death');
+  if (e.key === 'w' || e.key === 'W') devPreviewScreen('win');
+  if (e.key === 'l' || e.key === 'L') devPreviewScreen('leaderboard');
+  if (e.key === 'p' || e.key === 'P') devPreviewScreen('pause');
 });
+
+function _prepDevPreviewBase() {
+  _resetAllState();
+  paused = false;
+  pauseSel = 0;
+  endScreenSelection = 0;
+  endScreenSelectionChangedAt = getNow();
+  if (typeof pixiPost !== 'undefined') {
+    pixiPost.setPaused(false);
+    pixiPost.setNearDeath(false);
+    pixiPost.setFlowState(false);
+  }
+}
+
+function devPreviewScreen(screen) {
+  startScreenTransition('fade', () => {
+    _prepDevPreviewBase();
+
+    if (screen === 'death') {
+      gameState = 'playing';
+      stage.current = Math.max(1, Math.min(10, furthestStage || 5));
+      COLOR_BG = STAGE_BG_COLORS[stage.current - 1];
+      if (typeof pixiPost !== 'undefined') pixiPost.setStage(stage.current);
+      player.score = Math.max(save.highScore || 0, 28450);
+      stage.totalKills = 312;
+      player.dead = true;
+      player.deathPresentationPending = false;
+      player.deathMessage = 'DEV PREVIEW';
+      audio.playMusic('death');
+      return;
+    }
+
+    if (screen === 'win') {
+      gameState = 'win';
+      stage.current = 10;
+      COLOR_BG = STAGE_BG_COLORS[9];
+      if (typeof pixiPost !== 'undefined') pixiPost.setStage(10);
+      player.score = Math.max(save.highScore || 0, 58210);
+      stage.totalKills = 640;
+      missionCompleteSequence.startedAt = getNow() - 2400;
+      missionCompleteSequence.heroX = PLAY_X + PLAY_W * 0.5;
+      audio.playMusic('win');
+      return;
+    }
+
+    if (screen === 'leaderboard') {
+      gameState = 'leaderboard';
+      leaderboard.submitMessage = '';
+      leaderboard.submitOk = false;
+      leaderboard.fetchScores();
+      audio.playMusic('title');
+      return;
+    }
+
+    if (screen === 'pause') {
+      gameState = 'playing';
+      stage.current = Math.max(1, Math.min(10, furthestStage || 3));
+      COLOR_BG = STAGE_BG_COLORS[stage.current - 1];
+      if (typeof pixiPost !== 'undefined') pixiPost.setStage(stage.current);
+      player.score = 12400;
+      stage.totalKills = 96;
+      paused = true;
+      pauseSel = 0;
+      if (typeof pixiPost !== 'undefined') pixiPost.setPaused(true);
+      audio.playMusic('gameplay');
+    }
+  });
+}
 
 function devJumpToStage(n) {
   startScreenTransition('fade', () => {
     _resetAllState();
+    paused = false;
+    if (typeof pixiPost !== 'undefined') pixiPost.setPaused(false);
     stage.current = n;
     COLOR_BG = STAGE_BG_COLORS[n - 1];
+    if (typeof pixiPost !== 'undefined') pixiPost.setStage(n);
     if (devFastStage) stage.timer = 8000;
     gameState = 'playing';
     audio.playMusic('gameplay');
@@ -1066,6 +1254,8 @@ window.addEventListener('keydown', e => {
     stage.totalKills = 640;
     stage.current = 10;
     gameState = 'win';
+    missionCompleteSequence.startedAt = getNow() - 2400;
+    missionCompleteSequence.heroX = PLAY_X + PLAY_W * 0.5;
   }
 });
 

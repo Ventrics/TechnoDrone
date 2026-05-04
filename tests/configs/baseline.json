@@ -1,0 +1,8 @@
+{
+  "name": "baseline",
+  "description": "No overrides, uses current source values",
+  "stageConfig": [],
+  "player": {},
+  "dash": {},
+  "flowState": {}
+}

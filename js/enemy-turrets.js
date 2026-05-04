@@ -32,11 +32,12 @@ function spawnTurret(zoneIndex) {
   const isStage7 = stage.current === 7;
   const lockY = Math.min(PLAY_Y + PLAY_H * (isStage7 ? Math.min(lockFrac, 0.24) : lockFrac), getBacklineYLimit());
   const turretFireTimerMax = stage.current >= 8 ? 900 : stage.current >= 5 ? 1200 : 1500;
+  const turretHp = stage.current >= 8 ? 15 : stage.current >= 5 ? 13 : 11;
   return {
     x,
     y: PLAY_Y - 30,
     lockY,
-    size: 13,
+    size: 19,
     color: '#ff2200',
     vx: 0,
     vy: 280,
@@ -45,8 +46,8 @@ function spawnTurret(zoneIndex) {
     turretFireTimer: turretFireTimerMax,
     turretCharging: false,
     turretChargeTimer: 0,
-    hp: 7,
-    maxHp: 7,
+    hp: turretHp,
+    maxHp: turretHp,
     isElite: false,
     isKamikaze: false,
     isMini: false,
@@ -80,8 +81,8 @@ const turretIndicators = {
       const y = PLAY_Y + 4;
       ctx.save();
       ctx.globalAlpha = ind.life * 0.7;
-      setGlow('#ff6600', 20);
-      ctx.fillStyle = '#ff6600';
+      setGlow('#ff2244', 20);
+      ctx.fillStyle = '#ff2244';
       ctx.beginPath();
       ctx.moveTo(ind.x - 20, y);
       ctx.lineTo(ind.x, y + 4);
@@ -104,14 +105,14 @@ const turretIndicators = {
     this.pool.forEach(ind => {
       const y = PLAY_Y + 4;
       // Arrow head
-      g.beginFill(0xff6600, ind.life * 0.7);
+      g.beginFill(0xff2244, ind.life * 0.7);
       g.moveTo(ind.x - 20, y);
       g.lineTo(ind.x, y + 4);
       g.lineTo(ind.x + 20, y);
       g.closePath();
       g.endFill();
       // Vertical streak
-      g.beginFill(0xff6600, ind.life * 0.25);
+      g.beginFill(0xff2244, ind.life * 0.25);
       g.drawRect(ind.x - 1.5, PLAY_Y, 3, 80);
       g.endFill();
     });

@@ -16,6 +16,47 @@ function persistSave(save, storage = localStorage) {
   } catch (error) {}
 }
 
+function _emptyAnalytics() {
+  return {
+    totalRuns: 0,
+    totalScore: 0,
+    totalKills: 0,
+    completions: 0,
+    stageReachCounts: Array(10).fill(0),
+    deathStageCounts: Array(10).fill(0),
+    lastRun: null,
+  };
+}
+
+function _normalizeAnalytics(raw) {
+  const analytics = Object.assign(_emptyAnalytics(), raw || {});
+  analytics.totalRuns = Math.max(0, Math.floor(Number(analytics.totalRuns) || 0));
+  analytics.totalScore = Math.max(0, Math.floor(Number(analytics.totalScore) || 0));
+  analytics.totalKills = Math.max(0, Math.floor(Number(analytics.totalKills) || 0));
+  analytics.completions = Math.max(0, Math.floor(Number(analytics.completions) || 0));
+  analytics.stageReachCounts = Array.from({ length: 10 }, (_, i) =>
+    Math.max(0, Math.floor(Number(analytics.stageReachCounts?.[i]) || 0))
+  );
+  analytics.deathStageCounts = Array.from({ length: 10 }, (_, i) =>
+    Math.max(0, Math.floor(Number(analytics.deathStageCounts?.[i]) || 0))
+  );
+  return analytics;
+}
+
+function loadAnalytics(storage = localStorage) {
+  try {
+    const raw = storage.getItem('drone_analytics');
+    if (raw) return _normalizeAnalytics(JSON.parse(raw));
+  } catch (error) {}
+  return _emptyAnalytics();
+}
+
+function persistAnalytics(analytics, storage = localStorage) {
+  try {
+    storage.setItem('drone_analytics', JSON.stringify(_normalizeAnalytics(analytics)));
+  } catch (error) {}
+}
+
 function loadFurthestStage(storage = localStorage) {
   try {
     return parseInt(storage.getItem('drone_furthest') || '1', 10) || 1;
@@ -140,14 +181,36 @@ function writeSave() {
   persistSave(save);
 }
 
-function recordRunResult(score, kills) {
-  if (score > save.highScore) save.highScore = score;
-  save.runs.push({ score, kills });
+function recordRunResult(score, kills, stageReached = null, completed = false) {
+  const reached = Math.max(1, Math.min(10, Math.floor(Number(
+    stageReached ?? (typeof stage !== 'undefined' ? stage.current : 1)
+  ) || 1)));
+  const run = {
+    score: Math.max(0, Math.floor(Number(score) || 0)),
+    kills: Math.max(0, Math.floor(Number(kills) || 0)),
+    stageReached: reached,
+    completed: !!completed,
+    endedAt: new Date().toISOString(),
+  };
+
+  if (run.score > save.highScore) save.highScore = run.score;
+  save.runs.push(run);
   if (save.runs.length > 10) save.runs.shift();
+
+  analytics.totalRuns++;
+  analytics.totalScore += run.score;
+  analytics.totalKills += run.kills;
+  analytics.stageReachCounts[reached - 1]++;
+  if (run.completed) analytics.completions++;
+  else analytics.deathStageCounts[reached - 1]++;
+  analytics.lastRun = run;
+
   writeSave();
+  persistAnalytics(analytics);
 }
 
 const save = loadSave();
+const analytics = loadAnalytics();
 let furthestStage = loadFurthestStage();
 
 let gameState               = 'title';
